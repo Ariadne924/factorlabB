@@ -1,0 +1,6 @@
+# 开发与质量检查依赖（Python 3.12）
+-r requirements.txt
+
+pytest==9.1.1
+ruff==0.16.1
+mypy==2.3.0
