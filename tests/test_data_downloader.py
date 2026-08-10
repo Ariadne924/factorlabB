@@ -7,6 +7,7 @@ import requests
 
 from data.downloader import DataDownloader
 from data.schema import KlineRaw, raw_to_dataframe
+from data.silver import merge_point_in_time_features
 from scripts.download_research_data import build_plan, main
 
 
@@ -137,3 +138,22 @@ def test_optional_feature_failure_does_not_discard_klines(tmp_path) -> None:
     assert manifest["rows"]["open_interest"] == 0
     assert "open_interest" in manifest["feature_errors"]
     assert pd.read_parquet(manifest["paths"]["silver_klines"]).shape[0] == 4
+
+
+def test_point_in_time_merge_normalizes_datetime_units() -> None:
+    millisecond_index = pd.date_range(
+        "2026-01-01", periods=3, freq="h", tz="UTC", unit="ms"
+    )
+    microsecond_times = pd.Series(
+        pd.date_range("2026-01-01", periods=2, freq="2h", tz="UTC", unit="us")
+    )
+    klines = pd.DataFrame({"close": [100.0, 101.0, 102.0]}, index=millisecond_index)
+    klines.index.name = "open_time_utc"
+    features = pd.DataFrame(
+        {"timestamp": microsecond_times, "funding_rate": [0.001, 0.002]}
+    )
+    merged = merge_point_in_time_features(
+        klines, features, feature_columns=["funding_rate"]
+    )
+    assert merged.index.dtype == millisecond_index.dtype
+    assert merged["funding_rate"].tolist() == [0.001, 0.001, 0.002]

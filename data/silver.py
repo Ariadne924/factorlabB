@@ -110,11 +110,23 @@ def merge_point_in_time_features(
     missing = [column for column in required if column not in features.columns]
     if missing:
         raise ValueError(f"扩展数据缺少列: {missing}")
+    original_index = klines.index
+    normalized_index = pd.DatetimeIndex(
+        pd.to_datetime(original_index, utc=True)
+    ).astype("datetime64[ns, UTC]")
     right = features[required].copy()
-    right[feature_time_column] = pd.to_datetime(right[feature_time_column], utc=True)
+    right[feature_time_column] = pd.to_datetime(
+        right[feature_time_column], utc=True
+    ).astype("datetime64[ns, UTC]")
     right = right.sort_values(feature_time_column)
     left_name = klines.index.name or "open_time_utc"
-    left = klines.reset_index(names=left_name).sort_values(left_name)
+    normalized_klines = klines.copy()
+    normalized_klines.index = normalized_index
+    left = normalized_klines.reset_index(names=left_name)
+    left[left_name] = pd.to_datetime(left[left_name], utc=True).astype(
+        "datetime64[ns, UTC]"
+    )
+    left = left.sort_values(left_name)
     merged = pd.merge_asof(
         left,
         right,
@@ -124,4 +136,6 @@ def merge_point_in_time_features(
         tolerance=tolerance,
         allow_exact_matches=True,
     ).drop(columns=[feature_time_column])
-    return merged.set_index(left_name).reindex(klines.index)
+    result = merged.set_index(left_name).reindex(normalized_index)
+    result.index = original_index
+    return result
