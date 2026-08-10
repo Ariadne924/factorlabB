@@ -55,7 +55,7 @@ def make_open_interest_change(params: dict[str, Any] | None = None):
     def factor(df: pd.DataFrame) -> pd.Series:
         values = _required(df, "open_interest", "open_interest_change")
         return (
-            values.pct_change(window)
+            values.pct_change(window, fill_method=None)
             .replace([np.inf, -np.inf], np.nan)
             .rename("open_interest_change")
         )

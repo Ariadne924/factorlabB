@@ -45,6 +45,7 @@ class RobustnessTests(unittest.TestCase):
         second = block_bootstrap_ic(factor, returns, n_bootstrap=50, block_size=12)
         self.assertEqual(first, second)
         self.assertEqual(first["n_obs"], 238)
+        self.assertGreater(first["p_value"] or 0.0, 0.0)
 
     def test_fdr_and_monotonicity(self) -> None:
         adjusted = benjamini_hochberg(pd.Series({"a": 0.001, "b": 0.02, "c": 0.9}))
@@ -56,4 +57,3 @@ class RobustnessTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -45,6 +45,9 @@ data/cache/
 reports/*.html
 reports/*.png
 reports/*.pdf
+reports/data_quality_*.json
+reports/data_download_manifest.json
+reports/single_factor/[A-Z]*_*.json
 
 # ---- 分发/打包 ----
 dist/

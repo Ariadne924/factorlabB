@@ -27,6 +27,13 @@ from visualization.single_factor_report import (  # noqa: E402
 )
 
 
+def _portable_path(path: Path, base: Path) -> str:
+    try:
+        return path.resolve().relative_to(base.resolve()).as_posix()
+    except ValueError:
+        return str(path.resolve())
+
+
 def run(
     data_dir: Path,
     reports_dir: Path,
@@ -42,7 +49,7 @@ def run(
     report_paths: list[str] = []
     manifest: dict[str, object] = {
         "status": "ok" if silver_files else "insufficient_data",
-        "silver_files": [str(path) for path in silver_files],
+        "silver_files": [_portable_path(path, PROJECT_ROOT) for path in silver_files],
         "factor_count": len(list_factors()),
         "research_settings": {
             "lookback_days": lookback_days,
@@ -123,6 +130,7 @@ def run(
         dtype="float64",
     )
     adjusted = benjamini_hochberg(p_values)
+    summary_rows: list[dict[str, Any]] = []
     for output, report in completed_reports:
         key = str(output)
         testing = report["robustness"]["multiple_testing"]
@@ -132,6 +140,35 @@ def run(
             bool(adjusted.loc[key, "reject"]) if pd.notna(q_value) else None
         )
         write_report_data(report, output)
+        summary_rows.append(
+            {
+                "report": output.relative_to(reports_dir).as_posix(),
+                "factor_name": report["factor_name"],
+                "status": report["status"],
+                "sample": report["sample"],
+                "metrics": report["metrics"],
+                "sign_consistency": report["robustness"]["sign_consistency"],
+                "group_monotonicity": report["robustness"]["group_monotonicity"],
+                "multiple_testing": testing,
+                "lookahead_status": report["lookahead_status"],
+            }
+        )
+    summary = {
+        "status": manifest["status"],
+        "factor_count": manifest["factor_count"],
+        "computed_report_count": len(summary_rows),
+        "fdr_5pct_pass_count": sum(
+            row["multiple_testing"]["reject_fdr_5pct"] is True for row in summary_rows
+        ),
+        "results": summary_rows,
+        "research_note": (
+            "候选结果仅适用于当前样本；FDR 未通过的因子不得描述为显著，"
+            "任何结果均不代表完成 6 个月 OOS。"
+        ),
+    }
+    summary_path = reports_dir / "research_summary.json"
+    summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    manifest["summary_report"] = str(summary_path.relative_to(reports_dir))
     manifest_path = reports_dir / "research_manifest.json"
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     return manifest

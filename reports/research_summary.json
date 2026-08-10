@@ -1,0 +1,834 @@
+{
+  "status": "ok",
+  "factor_count": 33,
+  "computed_report_count": 33,
+  "fdr_5pct_pass_count": 0,
+  "results": [
+    {
+      "report": "single_factor/BTCUSDT_1h_funding_rate.json",
+      "factor_name": "funding_rate",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-02-02T00:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 4320
+      },
+      "metrics": {
+        "ic": -0.01679834351033096,
+        "rank_ic": -0.008223842241677751,
+        "icir": 0.013340160154074635,
+        "turnover": 0.023007806805416208
+      },
+      "sign_consistency": 0.5,
+      "group_monotonicity": -0.49999999999999994,
+      "multiple_testing": {
+        "p_value": 0.5788423153692615,
+        "q_value": 0.7562652472832114,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    },
+    {
+      "report": "single_factor/BTCUSDT_1h_open_interest_change.json",
+      "factor_name": "open_interest_change",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-07-13T02:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 454
+      },
+      "metrics": {
+        "ic": 0.00598944887083947,
+        "rank_ic": 0.03142869325440728,
+        "icir": 0.284767444475994,
+        "turnover": 0.0647421497408369
+      },
+      "sign_consistency": 1.0,
+      "group_monotonicity": 0.8999999999999998,
+      "multiple_testing": {
+        "p_value": 0.4351297405189621,
+        "q_value": 0.7562652472832114,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    },
+    {
+      "report": "single_factor/BTCUSDT_1h_basis.json",
+      "factor_name": "basis",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-07-12T17:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 463
+      },
+      "metrics": {
+        "ic": 0.07440150981323612,
+        "rank_ic": 0.0691562679097576,
+        "icir": 0.23873865836139224,
+        "turnover": 0.14757650556786625
+      },
+      "sign_consistency": 1.0,
+      "group_monotonicity": 0.6,
+      "multiple_testing": {
+        "p_value": 0.11976047904191617,
+        "q_value": 0.28229255774165957,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    },
+    {
+      "report": "single_factor/BTCUSDT_1h_return_momentum.json",
+      "factor_name": "return_momentum",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-02-02T00:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 4320
+      },
+      "metrics": {
+        "ic": -0.00902168162858774,
+        "rank_ic": -0.026767299733425357,
+        "icir": -1.024283364795672,
+        "turnover": 0.0895545522368861
+      },
+      "sign_consistency": 0.7,
+      "group_monotonicity": -0.19999999999999998,
+      "multiple_testing": {
+        "p_value": 0.05189620758483034,
+        "q_value": 0.15369261477045906,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    },
+    {
+      "report": "single_factor/BTCUSDT_1h_short_term_reversal.json",
+      "factor_name": "short_term_reversal",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-02-02T00:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 4320
+      },
+      "metrics": {
+        "ic": 0.01775425094020666,
+        "rank_ic": 0.046266907402012405,
+        "icir": 0.6780108567632765,
+        "turnover": 0.18536639354102885
+      },
+      "sign_consistency": 0.9,
+      "group_monotonicity": 0.3,
+      "multiple_testing": {
+        "p_value": 0.003992015968063872,
+        "q_value": 0.06586826347305388,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    },
+    {
+      "report": "single_factor/BTCUSDT_1h_moving_average_gap.json",
+      "factor_name": "moving_average_gap",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-02-02T00:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 4320
+      },
+      "metrics": {
+        "ic": -0.015429407715001573,
+        "rank_ic": -0.03237986356059225,
+        "icir": -1.3159437937780445,
+        "turnover": 0.08225653443441126
+      },
+      "sign_consistency": 0.7,
+      "group_monotonicity": -0.39999999999999997,
+      "multiple_testing": {
+        "p_value": 0.015968063872255488,
+        "q_value": 0.13173652694610777,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    },
+    {
+      "report": "single_factor/BTCUSDT_1h_rsi.json",
+      "factor_name": "rsi",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-02-02T00:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 4320
+      },
+      "metrics": {
+        "ic": 0.00016644787594465087,
+        "rank_ic": -0.02423264338840095,
+        "icir": -1.0915957005125538,
+        "turnover": 0.08774579163558092
+      },
+      "sign_consistency": 0.7,
+      "group_monotonicity": 0.19999999999999998,
+      "multiple_testing": {
+        "p_value": 0.05588822355289421,
+        "q_value": 0.15369261477045906,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    },
+    {
+      "report": "single_factor/BTCUSDT_1h_k_mid.json",
+      "factor_name": "k_mid",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-02-02T00:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 4320
+      },
+      "metrics": {
+        "ic": -0.013456861585641562,
+        "rank_ic": -0.03035101548901141,
+        "icir": -0.3532421065983659,
+        "turnover": 0.3295966680387264
+      },
+      "sign_consistency": 0.95,
+      "group_monotonicity": -0.19999999999999998,
+      "multiple_testing": {
+        "p_value": 0.023952095808383235,
+        "q_value": 0.13173652694610777,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    },
+    {
+      "report": "single_factor/BTCUSDT_1h_k_length.json",
+      "factor_name": "k_length",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-02-02T00:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 4320
+      },
+      "metrics": {
+        "ic": 0.055370213566061276,
+        "rank_ic": 0.006333708163076402,
+        "icir": 0.128010252939659,
+        "turnover": 0.19844105074048346
+      },
+      "sign_consistency": 0.8,
+      "group_monotonicity": 0.3,
+      "multiple_testing": {
+        "p_value": 0.562874251497006,
+        "q_value": 0.7562652472832114,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    },
+    {
+      "report": "single_factor/BTCUSDT_1h_k_mid2.json",
+      "factor_name": "k_mid2",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-02-02T00:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 4320
+      },
+      "metrics": {
+        "ic": -0.0037221694715743013,
+        "rank_ic": -0.032737659498593336,
+        "icir": -0.3384259905570646,
+        "turnover": 0.34469114721343247
+      },
+      "sign_consistency": 1.0,
+      "group_monotonicity": -0.19999999999999998,
+      "multiple_testing": {
+        "p_value": 0.007984031936127744,
+        "q_value": 0.08782435129740518,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    },
+    {
+      "report": "single_factor/BTCUSDT_1h_upper_shadow.json",
+      "factor_name": "upper_shadow",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-02-02T00:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 4320
+      },
+      "metrics": {
+        "ic": 0.029060982896372014,
+        "rank_ic": 0.002563138166810837,
+        "icir": -0.050715083083199906,
+        "turnover": 0.2919778455232264
+      },
+      "sign_consistency": 0.65,
+      "group_monotonicity": 0.7,
+      "multiple_testing": {
+        "p_value": 0.9021956087824351,
+        "q_value": 0.9700598802395209,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    },
+    {
+      "report": "single_factor/BTCUSDT_1h_upper_shadow2.json",
+      "factor_name": "upper_shadow2",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-02-02T00:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 4320
+      },
+      "metrics": {
+        "ic": -0.001787652804619491,
+        "rank_ic": -0.009580627294012,
+        "icir": -0.12974448801640295,
+        "turnover": 0.3339898853472597
+      },
+      "sign_consistency": 0.75,
+      "group_monotonicity": 0.19999999999999998,
+      "multiple_testing": {
+        "p_value": 0.4431137724550898,
+        "q_value": 0.7562652472832114,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    },
+    {
+      "report": "single_factor/BTCUSDT_1h_lower_shadow.json",
+      "factor_name": "lower_shadow",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-02-02T00:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 4320
+      },
+      "metrics": {
+        "ic": 0.03785768279325643,
+        "rank_ic": 0.008815122560417523,
+        "icir": 0.12797080718305517,
+        "turnover": 0.2922471658391431
+      },
+      "sign_consistency": 0.7,
+      "group_monotonicity": 0.7,
+      "multiple_testing": {
+        "p_value": 0.5229540918163673,
+        "q_value": 0.7562652472832114,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    },
+    {
+      "report": "single_factor/BTCUSDT_1h_lower_shadow2.json",
+      "factor_name": "lower_shadow2",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-02-02T00:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 4320
+      },
+      "metrics": {
+        "ic": -0.00425048258190472,
+        "rank_ic": -0.009973548018917996,
+        "icir": 0.010778176137925982,
+        "turnover": 0.334982002435406
+      },
+      "sign_consistency": 0.85,
+      "group_monotonicity": 0.09999999999999999,
+      "multiple_testing": {
+        "p_value": 0.5988023952095808,
+        "q_value": 0.7562652472832114,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    },
+    {
+      "report": "single_factor/BTCUSDT_1h_k_shift.json",
+      "factor_name": "k_shift",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-02-02T00:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 4320
+      },
+      "metrics": {
+        "ic": -0.009006376708818218,
+        "rank_ic": -0.034037918823953024,
+        "icir": -0.2800989146911769,
+        "turnover": 0.33746376904804787
+      },
+      "sign_consistency": 0.95,
+      "group_monotonicity": 0.09999999999999999,
+      "multiple_testing": {
+        "p_value": 0.031936127744510975,
+        "q_value": 0.13173652694610777,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    },
+    {
+      "report": "single_factor/BTCUSDT_1h_k_shift2.json",
+      "factor_name": "k_shift2",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-02-02T00:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 4320
+      },
+      "metrics": {
+        "ic": -0.004237371149742935,
+        "rank_ic": -0.030184304483285376,
+        "icir": -0.24765286558847535,
+        "turnover": 0.3507477189507173
+      },
+      "sign_consistency": 0.95,
+      "group_monotonicity": -0.6,
+      "multiple_testing": {
+        "p_value": 0.027944111776447105,
+        "q_value": 0.13173652694610777,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    },
+    {
+      "report": "single_factor/BTCUSDT_1h_linear_trend_slope.json",
+      "factor_name": "linear_trend_slope",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-02-02T00:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 4320
+      },
+      "metrics": {
+        "ic": -0.0015896341933609203,
+        "rank_ic": 0.0019993913370349053,
+        "icir": -0.8190866899227768,
+        "turnover": 0.028346003447300042
+      },
+      "sign_consistency": 0.75,
+      "group_monotonicity": 0.6,
+      "multiple_testing": {
+        "p_value": 0.9580838323353293,
+        "q_value": 0.9700598802395209,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    },
+    {
+      "report": "single_factor/BTCUSDT_1h_trend_r_squared.json",
+      "factor_name": "trend_r_squared",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-02-02T00:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 4320
+      },
+      "metrics": {
+        "ic": -0.01271947094845068,
+        "rank_ic": -0.008599199474122627,
+        "icir": 0.005619190584908989,
+        "turnover": 0.061291622717878795
+      },
+      "sign_consistency": 0.55,
+      "group_monotonicity": -0.3,
+      "multiple_testing": {
+        "p_value": 0.6187624750499002,
+        "q_value": 0.7562652472832114,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    },
+    {
+      "report": "single_factor/BTCUSDT_1h_trend_residual.json",
+      "factor_name": "trend_residual",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-02-02T00:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 4320
+      },
+      "metrics": {
+        "ic": -0.022387800163251207,
+        "rank_ic": -0.05123785845181711,
+        "icir": -0.715902163328591,
+        "turnover": 0.11867802046084056
+      },
+      "sign_consistency": 0.9,
+      "group_monotonicity": -0.49999999999999994,
+      "multiple_testing": {
+        "p_value": 0.003992015968063872,
+        "q_value": 0.06586826347305388,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    },
+    {
+      "report": "single_factor/BTCUSDT_1h_price_position_rsv.json",
+      "factor_name": "price_position_rsv",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-02-02T00:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 4320
+      },
+      "metrics": {
+        "ic": 0.007162790927540519,
+        "rank_ic": -0.025175752685204045,
+        "icir": -1.1119360385762416,
+        "turnover": 0.09369302736401604
+      },
+      "sign_consistency": 0.6,
+      "group_monotonicity": 0.49999999999999994,
+      "multiple_testing": {
+        "p_value": 0.05189620758483034,
+        "q_value": 0.15369261477045906,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    },
+    {
+      "report": "single_factor/BTCUSDT_1h_high_recency.json",
+      "factor_name": "high_recency",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-02-02T00:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 4320
+      },
+      "metrics": {
+        "ic": -0.0005808197121880568,
+        "rank_ic": -0.014497540499332053,
+        "icir": -0.5278027549480592,
+        "turnover": 0.06609409971444007
+      },
+      "sign_consistency": 0.6,
+      "group_monotonicity": 0.0,
+      "multiple_testing": {
+        "p_value": 0.26746506986027946,
+        "q_value": 0.5516467065868264,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    },
+    {
+      "report": "single_factor/BTCUSDT_1h_low_recency.json",
+      "factor_name": "low_recency",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-02-02T00:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 4320
+      },
+      "metrics": {
+        "ic": -0.004836874062271779,
+        "rank_ic": -0.0019717143669992026,
+        "icir": 0.3507386856636084,
+        "turnover": 0.06702007923644876
+      },
+      "sign_consistency": 0.75,
+      "group_monotonicity": -0.09999999999999999,
+      "multiple_testing": {
+        "p_value": 0.9700598802395209,
+        "q_value": 0.9700598802395209,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    },
+    {
+      "report": "single_factor/BTCUSDT_1h_high_low_recency_diff.json",
+      "factor_name": "high_low_recency_diff",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-02-02T00:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 4320
+      },
+      "metrics": {
+        "ic": 0.0024779589078864884,
+        "rank_ic": -0.007449706477176884,
+        "icir": -0.6771057420882404,
+        "turnover": 0.042811907763285396
+      },
+      "sign_consistency": 0.55,
+      "group_monotonicity": -0.09999999999999999,
+      "multiple_testing": {
+        "p_value": 0.5588822355289421,
+        "q_value": 0.7562652472832114,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    },
+    {
+      "report": "single_factor/BTCUSDT_1h_price_volume_correlation.json",
+      "factor_name": "price_volume_correlation",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-02-02T00:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 4320
+      },
+      "metrics": {
+        "ic": -0.0231737255113849,
+        "rank_ic": -0.031456572860160625,
+        "icir": -0.5619507240623037,
+        "turnover": 0.050944738150978025
+      },
+      "sign_consistency": 0.75,
+      "group_monotonicity": -0.7,
+      "multiple_testing": {
+        "p_value": 0.023952095808383235,
+        "q_value": 0.13173652694610777,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    },
+    {
+      "report": "single_factor/BTCUSDT_1h_return_volume_correlation.json",
+      "factor_name": "return_volume_correlation",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-02-02T00:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 4320
+      },
+      "metrics": {
+        "ic": -0.004560383254536073,
+        "rank_ic": -0.01037041141149943,
+        "icir": -0.5641348624712826,
+        "turnover": 0.043075600490511345
+      },
+      "sign_consistency": 1.0,
+      "group_monotonicity": -0.3,
+      "multiple_testing": {
+        "p_value": 0.47105788423153694,
+        "q_value": 0.7562652472832114,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    },
+    {
+      "report": "single_factor/BTCUSDT_1h_volume_weighted_volatility.json",
+      "factor_name": "volume_weighted_volatility",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-02-02T00:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 4320
+      },
+      "metrics": {
+        "ic": 0.02568718790304715,
+        "rank_ic": 0.03280869463781157,
+        "icir": 0.04194387841196842,
+        "turnover": 0.047514106488984936
+      },
+      "sign_consistency": 0.95,
+      "group_monotonicity": 0.7,
+      "multiple_testing": {
+        "p_value": 0.05588822355289421,
+        "q_value": 0.15369261477045906,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    },
+    {
+      "report": "single_factor/BTCUSDT_1h_volume_change_strength.json",
+      "factor_name": "volume_change_strength",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-02-02T00:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 4320
+      },
+      "metrics": {
+        "ic": 0.02032943283085,
+        "rank_ic": 0.00418829802582663,
+        "icir": 0.04654735712625089,
+        "turnover": 0.2183649657413839
+      },
+      "sign_consistency": 0.75,
+      "group_monotonicity": 0.09999999999999999,
+      "multiple_testing": {
+        "p_value": 0.7584830339321357,
+        "q_value": 0.8631013834400165,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    },
+    {
+      "report": "single_factor/BTCUSDT_1h_realized_volatility.json",
+      "factor_name": "realized_volatility",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-02-02T00:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 4320
+      },
+      "metrics": {
+        "ic": 0.02853227001809701,
+        "rank_ic": 0.008451763683281611,
+        "icir": 0.16901352502520764,
+        "turnover": 0.026955077907265913
+      },
+      "sign_consistency": 0.8,
+      "group_monotonicity": 0.6,
+      "multiple_testing": {
+        "p_value": 0.5548902195608783,
+        "q_value": 0.7562652472832114,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    },
+    {
+      "report": "single_factor/BTCUSDT_1h_range_volatility.json",
+      "factor_name": "range_volatility",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-02-02T00:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 4320
+      },
+      "metrics": {
+        "ic": 0.022783652491355572,
+        "rank_ic": -0.0004011982715738861,
+        "icir": 0.11804544814401603,
+        "turnover": 0.021439022664711482
+      },
+      "sign_consistency": 0.6,
+      "group_monotonicity": 0.6,
+      "multiple_testing": {
+        "p_value": 0.9620758483033932,
+        "q_value": 0.9700598802395209,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    },
+    {
+      "report": "single_factor/BTCUSDT_1h_downside_volatility.json",
+      "factor_name": "downside_volatility",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-02-02T00:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 4320
+      },
+      "metrics": {
+        "ic": 0.025912868111595207,
+        "rank_ic": 0.004563781430315291,
+        "icir": 0.536967085778653,
+        "turnover": 0.025504071158447172
+      },
+      "sign_consistency": 0.55,
+      "group_monotonicity": 0.7,
+      "multiple_testing": {
+        "p_value": 0.6706586826347305,
+        "q_value": 0.7904191616766466,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    },
+    {
+      "report": "single_factor/BTCUSDT_1h_volume_momentum.json",
+      "factor_name": "volume_momentum",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-02-02T00:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 4320
+      },
+      "metrics": {
+        "ic": 0.021657649091797074,
+        "rank_ic": 0.010843893470859059,
+        "icir": 0.0753821605230746,
+        "turnover": 0.19322368646720348
+      },
+      "sign_consistency": 0.55,
+      "group_monotonicity": 0.3,
+      "multiple_testing": {
+        "p_value": 0.39520958083832336,
+        "q_value": 0.7562652472832114,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    },
+    {
+      "report": "single_factor/BTCUSDT_1h_amihud_illiquidity.json",
+      "factor_name": "amihud_illiquidity",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-02-02T00:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 4320
+      },
+      "metrics": {
+        "ic": 0.014487215766769734,
+        "rank_ic": 0.020918541876636543,
+        "icir": 0.04535337773899597,
+        "turnover": 0.05359313498495022
+      },
+      "sign_consistency": 0.95,
+      "group_monotonicity": 0.7,
+      "multiple_testing": {
+        "p_value": 0.10778443113772455,
+        "q_value": 0.27360663288807,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    },
+    {
+      "report": "single_factor/BTCUSDT_1h_taker_buy_ratio.json",
+      "factor_name": "taker_buy_ratio",
+      "status": "computed_short_sample",
+      "sample": {
+        "start": "2026-02-02T00:00:00+00:00",
+        "end": "2026-07-31T23:00:00+00:00",
+        "frequency": "1h",
+        "n_obs": 4320
+      },
+      "metrics": {
+        "ic": -0.0014407916469103184,
+        "rank_ic": -0.013957922826534788,
+        "icir": -0.625104133276709,
+        "turnover": 0.08673561266754135
+      },
+      "sign_consistency": 0.6,
+      "group_monotonicity": 0.0,
+      "multiple_testing": {
+        "p_value": 0.23552894211576847,
+        "q_value": 0.5181636726546907,
+        "reject_fdr_5pct": false
+      },
+      "lookahead_status": "pass"
+    }
+  ],
+  "research_note": "候选结果仅适用于当前样本；FDR 未通过的因子不得描述为显著，任何结果均不代表完成 6 个月 OOS。"
+}

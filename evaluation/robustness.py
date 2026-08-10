@@ -88,10 +88,10 @@ def block_bootstrap_ic(
         }
     distribution = np.asarray(samples)
     alpha = 1 - confidence
-    p_value = min(
-        1.0,
-        2 * min(float(np.mean(distribution <= 0)), float(np.mean(distribution >= 0))),
-    )
+    # Add-one correction prevents an impossible exact p=0 in a finite bootstrap sample.
+    non_positive = (int(np.count_nonzero(distribution <= 0)) + 1) / (len(distribution) + 1)
+    non_negative = (int(np.count_nonzero(distribution >= 0)) + 1) / (len(distribution) + 1)
+    p_value = min(1.0, 2 * min(non_positive, non_negative))
     return {
         "estimate": float(compute_rank_ic(aligned["factor"], aligned["forward_return"])),
         "ci_low": float(np.quantile(distribution, alpha / 2)),
@@ -171,4 +171,3 @@ def group_monotonicity(group_returns: pd.DataFrame) -> float | None:
         return None
     value = group_returns["group"].rank().corr(group_returns["mean_return"].rank())
     return None if pd.isna(value) else float(value)
-

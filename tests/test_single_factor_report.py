@@ -47,3 +47,6 @@ def test_research_entry_is_honest_without_data(tmp_path) -> None:
     assert all(
         json.loads(path.read_text(encoding="utf-8"))["metrics"]["ic"] is None for path in generated
     )
+    summary = json.loads((tmp_path / "reports" / "research_summary.json").read_text("utf-8"))
+    assert summary["computed_report_count"] == 0
+    assert summary["fdr_5pct_pass_count"] == 0
