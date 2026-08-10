@@ -407,6 +407,25 @@ class BasisRaw(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class HistoricalBasisRaw(BaseModel):
+    """Binance 历史 Basis 端点记录；timestamp 是统计周期开始时间。"""
+
+    timestamp: datetime
+    symbol: str = Field(..., min_length=1)
+    futures_price: float = Field(..., gt=0)
+    index_price: float = Field(..., gt=0)
+    basis: float
+
+    @field_validator("timestamp")
+    @classmethod
+    def _ensure_historical_basis_utc(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("HistoricalBasisRaw.timestamp 必须带 UTC 时区")
+        return value.astimezone(UTC)
+
+    model_config = {"extra": "forbid"}
+
+
 # ══════════════════════════════════════════════════════════════════════
 # 资金费率 Schema（Bronze 入口校验）
 # ══════════════════════════════════════════════════════════════════════

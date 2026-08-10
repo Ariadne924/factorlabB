@@ -20,6 +20,7 @@ from data.base import ExchangeBase
 from data.schema import (
     BasisRaw,
     FundingRateRaw,
+    HistoricalBasisRaw,
     KlineRaw,
     OpenInterestRaw,
     OrderBookRaw,
@@ -117,6 +118,31 @@ class BinanceClient(ExchangeBase):
             return pd.DataFrame()
         return raw_to_dataframe(raw, symbol=self.symbol, interval=interval.value)
 
+    def fetch_futures_klines(
+        self,
+        interval: KlineInterval,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+        limit: int = 1000,
+    ) -> pd.DataFrame:
+        """获取 USDⓈ-M 永续合约 K 线，返回与现货相同的 Bronze Schema。"""
+        if not 1 <= limit <= 1500:
+            raise ValueError("futures kline limit 必须在 1..1500")
+        params: dict[str, Any] = {
+            "symbol": self.symbol.upper(),
+            "interval": interval.value,
+            "limit": limit,
+        }
+        if (start_ms := self._milliseconds(start_time)) is not None:
+            params["startTime"] = start_ms
+        if (end_ms := self._milliseconds(end_time)) is not None:
+            params["endTime"] = end_ms
+        rows = self._get(self.futures_base_url, "/fapi/v1/klines", params)
+        raw = [KlineRaw.from_binance_row(row) for row in rows]
+        if not raw:
+            return pd.DataFrame()
+        return raw_to_dataframe(raw, symbol=self.symbol, interval=interval.value)
+
     # ------------------------------------------------------------------
     # 逐笔成交
     # ------------------------------------------------------------------
@@ -190,6 +216,8 @@ class BinanceClient(ExchangeBase):
         limit: int = 30,
     ) -> pd.DataFrame:
         """获取 Binance 永续历史持仓量。"""
+        if not 1 <= limit <= 500:
+            raise ValueError("open interest limit 必须在 1..500")
         params: dict[str, Any] = {"symbol": self.symbol.upper(), "period": period, "limit": limit}
         if (start_ms := self._milliseconds(start_time)) is not None:
             params["startTime"] = start_ms
@@ -223,6 +251,40 @@ class BinanceClient(ExchangeBase):
             basis=(mark_price - index_price) / index_price,
         )
         return pd.DataFrame([record.model_dump()])
+
+    def fetch_historical_basis(
+        self,
+        *,
+        period: str = "1h",
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+        limit: int = 500,
+    ) -> pd.DataFrame:
+        """获取 Binance 最近约 30 天的永续历史基差。"""
+        if not 1 <= limit <= 500:
+            raise ValueError("historical basis limit 必须在 1..500")
+        params: dict[str, Any] = {
+            "pair": self.symbol.upper(),
+            "contractType": "PERPETUAL",
+            "period": period,
+            "limit": limit,
+        }
+        if (start_ms := self._milliseconds(start_time)) is not None:
+            params["startTime"] = start_ms
+        if (end_ms := self._milliseconds(end_time)) is not None:
+            params["endTime"] = end_ms
+        payload = self._get(self.futures_base_url, "/futures/data/basis", params)
+        rows = [
+            HistoricalBasisRaw(
+                timestamp=datetime.fromtimestamp(int(item["timestamp"]) / 1000, tz=UTC),
+                symbol=item["pair"],
+                futures_price=float(item["futuresPrice"]),
+                index_price=float(item["indexPrice"]),
+                basis=float(item["basisRate"]),
+            ).model_dump()
+            for item in payload
+        ]
+        return pd.DataFrame.from_records(rows)
 
     # ------------------------------------------------------------------
     # 交易所信息

@@ -56,6 +56,12 @@ pytest -q
 # 离线运行全部已注册因子的研究与报告（只读取已有 Silver 数据）
 python scripts/run_all_research.py
 
+# 查看真实数据下载计划（不联网、不写行情文件）
+python scripts/download_research_data.py
+
+# 确认后下载 Binance 永续数据
+python scripts/download_research_data.py --start 2025-01-01 --end 2026-01-01 --execute
+
 # 可选：收窄主样本，并指定稳健性窗口、预测周期和 bootstrap 次数
 python scripts/run_all_research.py --lookback-days 90 --robustness-windows 30 60 90 --horizons 1 3 6 12 --bootstrap-samples 500
 
@@ -109,6 +115,9 @@ crypto-factor-lab/
 
 如果没有真实 Silver 数据，研究入口仍会成功生成 `reports/research_manifest.json` 和空的
 单因子报告，但所有 IC 等指标均为 `null`、状态为 `insufficient_data`。这不是实证结果。
+
+真实数据获取和 Binance REST 历史范围限制见 `docs/DATA_ACQUISITION.md`。其中 OI 与 Basis
+只能直接取得最近约 30 天，长历史必须使用归档数据；系统不会用未来值回填缺口。
 
 ## 当前实现范围与限制
 

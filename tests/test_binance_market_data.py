@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 import requests
 
+from config.constants import KlineInterval
 from data.binance_client import BinanceClient
 from data.schema import OrderBookRaw, TradeRaw
 
@@ -86,3 +87,39 @@ def test_trade_schema_rejects_missing_direction() -> None:
         TradeRaw.from_binance_payload(
             {"a": 1, "p": "1", "q": "1", "T": 1_700_000_000_000}, symbol="BTCUSDT"
         )
+
+
+def test_futures_kline_uses_futures_endpoint() -> None:
+    session = Mock()
+    session.get.return_value = FakeResponse(
+        [[0, "1", "2", "0.5", "1.5", "10", 3_599_999, "15", 3, "5", "7", "0"]]
+    )
+    result = BinanceClient("BTCUSDT", session=session, sleep=lambda _: None).fetch_futures_klines(
+        interval=KlineInterval.HOUR_1
+    )
+    assert len(result) == 1
+    assert session.get.call_args.args[0].endswith("/fapi/v1/klines")
+
+
+def test_historical_basis_mock_endpoint() -> None:
+    session = Mock()
+    session.get.return_value = FakeResponse(
+        [
+            {
+                "pair": "BTCUSDT",
+                "timestamp": 1_700_000_000_000,
+                "futuresPrice": "101",
+                "indexPrice": "100",
+                "basisRate": "0.01",
+                "basis": "1",
+                "contractType": "PERPETUAL",
+                "annualizedBasisRate": "",
+            }
+        ]
+    )
+    result = BinanceClient(
+        "BTCUSDT", session=session, sleep=lambda _: None
+    ).fetch_historical_basis()
+    assert result.loc[0, "basis"] == pytest.approx(0.01)
+    assert result.loc[0, "futures_price"] == pytest.approx(101)
+    assert session.get.call_args.args[0].endswith("/futures/data/basis")
