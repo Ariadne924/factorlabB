@@ -54,6 +54,7 @@ build/
 
 # ---- 测试 ----
 .pytest_cache/
+.test-tmp/
 .coverage
 htmlcov/
 .tox/

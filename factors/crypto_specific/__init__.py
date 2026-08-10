@@ -30,6 +30,7 @@ def _required(df: pd.DataFrame, column: str, factor_name: str) -> pd.Series:
     category="加密货币特有",
     description="最近 window 次已公布资金费率的历史均值",
     default_params={"window": 3},
+    data_dependencies=("open", "high", "low", "close", "volume", "funding_rate"),
 )
 def make_funding_rate(params: dict[str, Any] | None = None):
     window = _window(params, 3)
@@ -46,6 +47,7 @@ def make_funding_rate(params: dict[str, Any] | None = None):
     category="加密货币特有",
     description="持仓量相对 window 根 K 线前的变化率",
     default_params={"window": 12},
+    data_dependencies=("open", "high", "low", "close", "volume", "open_interest"),
 )
 def make_open_interest_change(params: dict[str, Any] | None = None):
     window = _window(params, 12)
@@ -66,6 +68,7 @@ def make_open_interest_change(params: dict[str, Any] | None = None):
     category="加密货币特有",
     description="最近 window 个已观测永续基差的历史均值",
     default_params={"window": 3},
+    data_dependencies=("open", "high", "low", "close", "volume", "basis"),
 )
 def make_basis(params: dict[str, Any] | None = None):
     window = _window(params, 3)

@@ -1,7 +1,24 @@
 {
   "status": "insufficient_data",
   "silver_files": [],
-  "factor_count": 13,
+  "factor_count": 33,
+  "research_settings": {
+    "lookback_days": 180,
+    "robustness_windows": [
+      30,
+      60,
+      90,
+      180
+    ],
+    "horizons": [
+      1,
+      3,
+      6,
+      12,
+      24
+    ],
+    "bootstrap_samples": 500
+  },
   "reports": [
     "single_factor\\funding_rate.json",
     "single_factor\\open_interest_change.json",
@@ -10,6 +27,26 @@
     "single_factor\\short_term_reversal.json",
     "single_factor\\moving_average_gap.json",
     "single_factor\\rsi.json",
+    "single_factor\\k_mid.json",
+    "single_factor\\k_length.json",
+    "single_factor\\k_mid2.json",
+    "single_factor\\upper_shadow.json",
+    "single_factor\\upper_shadow2.json",
+    "single_factor\\lower_shadow.json",
+    "single_factor\\lower_shadow2.json",
+    "single_factor\\k_shift.json",
+    "single_factor\\k_shift2.json",
+    "single_factor\\linear_trend_slope.json",
+    "single_factor\\trend_r_squared.json",
+    "single_factor\\trend_residual.json",
+    "single_factor\\price_position_rsv.json",
+    "single_factor\\high_recency.json",
+    "single_factor\\low_recency.json",
+    "single_factor\\high_low_recency_diff.json",
+    "single_factor\\price_volume_correlation.json",
+    "single_factor\\return_volume_correlation.json",
+    "single_factor\\volume_weighted_volatility.json",
+    "single_factor\\volume_change_strength.json",
     "single_factor\\realized_volatility.json",
     "single_factor\\range_volatility.json",
     "single_factor\\downside_volatility.json",

@@ -1,5 +1,5 @@
 {
-  "factor_name": "amihud_illiquidity",
+  "factor_name": "lower_shadow",
   "status": "insufficient_data",
   "reason": "未找到 Silver K 线数据",
   "sample": {
@@ -15,10 +15,10 @@
     "turnover": null
   },
   "provenance": {
-    "category": "成交量与流动性",
-    "description": "绝对收益除以成交额的历史滚动均值",
-    "source": "project",
-    "source_url": "",
+    "category": "形态",
+    "description": "Lower shadow divided by open",
+    "source": "Microsoft Qlib Alpha158",
+    "source_url": "https://github.com/microsoft/qlib/blob/main/qlib/contrib/data/loader.py",
     "scope": "time_series",
     "data_dependencies": [
       "open",
@@ -27,9 +27,7 @@
       "close",
       "volume"
     ],
-    "default_params": {
-      "window": 20
-    }
+    "default_params": {}
   },
   "robustness": {
     "window_horizon": [],

@@ -14,6 +14,34 @@
     "icir": null,
     "turnover": null
   },
+  "provenance": {
+    "category": "动量",
+    "description": "收盘价相对历史移动均线的偏离",
+    "source": "project",
+    "source_url": "",
+    "scope": "time_series",
+    "data_dependencies": [
+      "open",
+      "high",
+      "low",
+      "close",
+      "volume"
+    ],
+    "default_params": {
+      "window": 20
+    }
+  },
+  "robustness": {
+    "window_horizon": [],
+    "bootstrap_rank_ic": {},
+    "sign_consistency": null,
+    "group_monotonicity": null,
+    "multiple_testing": {
+      "p_value": null,
+      "q_value": null,
+      "reject_fdr_5pct": null
+    }
+  },
   "ic_decay": [],
   "group_returns": [],
   "rolling_ic": [],

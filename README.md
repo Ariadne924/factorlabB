@@ -7,8 +7,8 @@
 本项目构建一套完整的数字资产（加密货币）量化因子研究与评估框架。涵盖：
 
 - **数据层**：多交易所统一数据接口（Binance 优先），K 线 / 成交 / 资金费率标准化
-- **因子层**：动量、波动率、成交量流动性、加密货币特有因子四大类，统一注册机制
-- **评估层**：IC 分析、分组测试、稳定性检验、相关性分析、成本敏感性、前视偏差检查
+- **因子层**：33 个正式候选因子，覆盖动量、波动率、量价、数字资产特有因子与 Qlib-style OHLCV 特征
+- **评估层**：IC、分组、相关性、成本、前视检查，以及多窗口/多 horizon、区块 bootstrap 与 BH-FDR
 - **可视化层**：单因子报告、交互式仪表盘
 
 ## 环境要求
@@ -56,6 +56,9 @@ pytest -q
 # 离线运行全部已注册因子的研究与报告（只读取已有 Silver 数据）
 python scripts/run_all_research.py
 
+# 可选：收窄主样本，并指定稳健性窗口、预测周期和 bootstrap 次数
+python scripts/run_all_research.py --lookback-days 90 --robustness-windows 30 60 90 --horizons 1 3 6 12 --bootstrap-samples 500
+
 # 启动 Factor Explorer / Single Factor Report
 streamlit run visualization/app.py
 
@@ -74,8 +77,8 @@ mypy config data factors utils scripts
 crypto-factor-lab/
 ├── config/              # 全局配置与常量
 ├── data/                # 数据层：Schema、交易所接口、下载器、校验器
-├── factors/             # 因子层：基类、注册机制、四类因子子目录
-├── evaluation/          # 评估层：IC、分组、稳定性、相关性、成本、前视检查
+├── factors/             # 因子层：基类、registry、原有因子与 Qlib-style 因子
+├── evaluation/          # 评估层：IC、分组、稳健性、FDR、相关性、成本、前视检查
 ├── visualization/       # 可视化层：报告、仪表盘、绘图工具
 ├── utils/               # 工具层：时间转换、日志、IO
 ├── scripts/             # 运行脚本：全流程、增量更新
@@ -109,11 +112,12 @@ crypto-factor-lab/
 
 ## 当前实现范围与限制
 
-- 13 个正式候选因子：4 个动量/反转、3 个波动率、3 个量价/流动性、3 个数字资产特有因子。
+- 33 个正式候选因子：原有 13 个，加 20 个参考 Microsoft Qlib Alpha158、适合单资产时间序列的 OHLCV 因子；来源写入 registry 和报告。
+- 默认研究样本收窄至末端 180 个自然日，并报告 30/60/90/180 天 × 1/3/6/12/24 根 K 线的 IC 稳健性网格、区块 bootstrap、符号一致性、分组单调性和 BH-FDR。
 - Binance REST：K 线、逐笔聚合成交、盘口快照、资金费率、持仓量、当前基差；429/5xx 与网络错误采用有限退避重试。
 - Binance WebSocket：基础同步消息流、自动重连和指数退避；不提供 exactly-once、持久化队列或完整生产级心跳状态机。
 - 数据异常报告：极端价格跳变、stale/flat、零成交量、交易所时间缺口。
-- 单因子 JSON/HTML 报告与 Streamlit Factor Explorer。
+- 单因子 JSON/HTML 报告与 Streamlit Factor Explorer；面板支持类别/来源/状态筛选、因子总览、稳健性矩阵和来源说明。
 - `fetch_basis()` 只返回当前快照；历史基差研究需要先持续归档或接入可靠历史源。
 - 当前仓库未附真实研究数据，未完成锁定六个月 OOS；任何短样本 IC 都不能描述为已验证 alpha。
 - `scripts/run_all.py` 与 `scripts/incremental_update.py` 是保留的旧编排占位入口；实际研究请使用 `scripts/run_all_research.py`。

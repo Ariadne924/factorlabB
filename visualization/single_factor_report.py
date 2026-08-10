@@ -11,6 +11,12 @@ import pandas as pd
 
 from evaluation.grouping_test import grouping_backtest
 from evaluation.ic_analysis import compute_ic, compute_rank_ic, rolling_ic
+from evaluation.robustness import (
+    block_bootstrap_ic,
+    group_monotonicity,
+    sign_consistency,
+    window_horizon_robustness,
+)
 from evaluation.stability import compute_ic_decay, compute_turnover
 
 
@@ -18,7 +24,25 @@ def _number(value: Any) -> float | None:
     return None if pd.isna(value) or not np.isfinite(value) else float(value)
 
 
-def insufficient_report(factor_name: str, reason: str) -> dict[str, Any]:
+def _provenance(metadata: dict[str, Any] | None) -> dict[str, Any]:
+    metadata = metadata or {}
+    return {
+        key: metadata.get(key)
+        for key in (
+            "category",
+            "description",
+            "source",
+            "source_url",
+            "scope",
+            "data_dependencies",
+            "default_params",
+        )
+    }
+
+
+def insufficient_report(
+    factor_name: str, reason: str, *, metadata: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """构造无数据报告；所有实证指标保持为空。"""
     return {
         "factor_name": factor_name,
@@ -26,6 +50,14 @@ def insufficient_report(factor_name: str, reason: str) -> dict[str, Any]:
         "reason": reason,
         "sample": {"start": None, "end": None, "frequency": None, "n_obs": 0},
         "metrics": {"ic": None, "rank_ic": None, "icir": None, "turnover": None},
+        "provenance": _provenance(metadata),
+        "robustness": {
+            "window_horizon": [],
+            "bootstrap_rank_ic": {},
+            "sign_consistency": None,
+            "group_monotonicity": None,
+            "multiple_testing": {"p_value": None, "q_value": None, "reject_fdr_5pct": None},
+        },
         "ic_decay": [],
         "group_returns": [],
         "rolling_ic": [],
@@ -47,12 +79,20 @@ def build_single_factor_report_data(
     lookahead_status: str = "not_run",
     fee_rate: float = 0.001,
     slippage: float = 0.0005,
+    close_prices: pd.Series | None = None,
+    lookback_days: tuple[int, ...] = (30, 60, 90, 180),
+    horizons: tuple[int, ...] = (1, 3, 6, 12, 24),
+    bootstrap_samples: int = 500,
+    bootstrap_block_size: int = 24,
+    metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     aligned = pd.concat(
         [factor_values.rename("factor"), forward_returns.rename("forward_return")], axis=1
     ).dropna()
     if len(aligned) < max(5, n_groups):
-        return insufficient_report(factor_name, f"有效因子/收益配对仅 {len(aligned)} 条")
+        return insufficient_report(
+            factor_name, f"有效因子/收益配对仅 {len(aligned)} 条", metadata=metadata
+        )
 
     ic = compute_ic(aligned["factor"], aligned["forward_return"])
     rank_ic_value = compute_rank_ic(aligned["factor"], aligned["forward_return"])
@@ -69,6 +109,23 @@ def build_single_factor_report_data(
     )
     groups = grouping_backtest(
         aligned["factor"], aligned["forward_return"], n_groups=min(n_groups, len(aligned))
+    )
+    robustness_grid = (
+        window_horizon_robustness(
+            factor_values,
+            close_prices,
+            lookback_days=lookback_days,
+            horizons=horizons,
+            min_obs=max(20, n_groups * 2),
+        )
+        if close_prices is not None
+        else pd.DataFrame()
+    )
+    bootstrap = block_bootstrap_ic(
+        aligned["factor"],
+        aligned["forward_return"],
+        n_bootstrap=bootstrap_samples,
+        block_size=bootstrap_block_size,
     )
     sample_index = aligned.index
     start = (
@@ -90,6 +147,31 @@ def build_single_factor_report_data(
             "rank_ic": _number(rank_ic_value),
             "icir": _number(icir),
             "turnover": _number(compute_turnover(aligned["factor"])),
+        },
+        "provenance": _provenance(metadata),
+        "robustness": {
+            "window_horizon": [
+                {
+                    "lookback_days": int(row["lookback_days"]),
+                    "horizon": int(row["horizon"]),
+                    "n_obs": int(row["n_obs"]),
+                    "ic": _number(row["ic"]),
+                    "rank_ic": _number(row["rank_ic"]),
+                    "status": str(row["status"]),
+                }
+                for _, row in robustness_grid.iterrows()
+            ],
+            "bootstrap_rank_ic": {
+                key: (_number(value) if isinstance(value, float) else value)
+                for key, value in bootstrap.items()
+            },
+            "sign_consistency": _number(sign_consistency(robustness_grid)),
+            "group_monotonicity": _number(group_monotonicity(groups)),
+            "multiple_testing": {
+                "p_value": _number(bootstrap.get("p_value")),
+                "q_value": None,
+                "reject_fdr_5pct": None,
+            },
         },
         "ic_decay": [{"lag": int(lag), "rank_ic": _number(value)} for lag, value in decay.items()],
         "group_returns": [
