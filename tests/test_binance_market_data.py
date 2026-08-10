@@ -123,3 +123,12 @@ def test_historical_basis_mock_endpoint() -> None:
     assert result.loc[0, "basis"] == pytest.approx(0.01)
     assert result.loc[0, "futures_price"] == pytest.approx(101)
     assert session.get.call_args.args[0].endswith("/futures/data/basis")
+
+
+def test_non_retryable_400_exposes_binance_error_body() -> None:
+    session = Mock()
+    session.get.return_value = FakeResponse({"code": -1130, "msg": "Invalid time"}, 400)
+    client = BinanceClient("BTCUSDT", session=session, sleep=lambda _: None)
+    with pytest.raises(requests.HTTPError, match="Invalid time"):
+        client.fetch_open_interest(period="1h")
+    assert session.get.call_count == 1

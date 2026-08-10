@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import requests
 
 from config.constants import KlineInterval, get_interval_ms
 from config.settings import DEFAULT_DATA_DIR
@@ -208,37 +209,71 @@ class DataDownloader:
         if start_dt >= end_dt:
             raise ValueError("start 必须早于 end")
         client = self.client_factory(symbol)
+        server_time = client.fetch_server_time()
+        effective_end = min(end_dt, server_time)
+        if start_dt >= effective_end:
+            raise ValueError(
+                f"start {start_dt.isoformat()} 不早于 Binance 服务器时间 "
+                f"{server_time.isoformat()}"
+            )
         kline_frame = self.fetch_klines_range(
             symbol=symbol,
             interval=interval,
             start=start_dt,
-            end=end_dt,
+            end=effective_end,
             market="futures",
         )
         if kline_frame.empty:
             raise ValueError("请求范围内没有永续 K 线数据")
 
-        feature_start = max(start_dt, end_dt - timedelta(days=30))
-        funding = self._paginate_datetime(
-            lambda left, right: client.fetch_funding_rate(
-                start_time=left, end_time=right, limit=1000
+        feature_errors: dict[str, str] = {}
+
+        def optional_feature(name: str, fetch: Callable[[], pd.DataFrame]) -> pd.DataFrame:
+            try:
+                return fetch()
+            except (requests.RequestException, ValueError) as exc:
+                feature_errors[name] = str(exc)
+                return pd.DataFrame()
+
+        # OI/Basis 的保留期相对 Binance 当前服务器时间计算，而不是请求 end。
+        feature_start = max(start_dt, server_time - timedelta(days=29))
+        funding = optional_feature(
+            "funding_rate",
+            lambda: self._paginate_datetime(
+                lambda left, right: client.fetch_funding_rate(
+                    start_time=left, end_time=right, limit=1000
+                ),
+                start=start_dt,
+                end=effective_end,
             ),
-            start=start_dt,
-            end=end_dt,
         )
-        open_interest = self._paginate_datetime(
-            lambda left, right: client.fetch_open_interest(
-                period=interval, start_time=left, end_time=right, limit=500
-            ),
-            start=feature_start,
-            end=end_dt,
+        open_interest = (
+            optional_feature(
+                "open_interest",
+                lambda: self._paginate_datetime(
+                    lambda left, right: client.fetch_open_interest(
+                        period=interval, start_time=left, end_time=right, limit=500
+                    ),
+                    start=feature_start,
+                    end=effective_end,
+                ),
+            )
+            if feature_start <= effective_end
+            else pd.DataFrame()
         )
-        basis = self._paginate_datetime(
-            lambda left, right: client.fetch_historical_basis(
-                period=interval, start_time=left, end_time=right, limit=500
-            ),
-            start=feature_start,
-            end=end_dt,
+        basis = (
+            optional_feature(
+                "basis",
+                lambda: self._paginate_datetime(
+                    lambda left, right: client.fetch_historical_basis(
+                        period=interval, start_time=left, end_time=right, limit=500
+                    ),
+                    start=feature_start,
+                    end=effective_end,
+                ),
+            )
+            if feature_start <= effective_end
+            else pd.DataFrame()
         )
 
         bronze_path = self._path(
@@ -317,6 +352,8 @@ class DataDownloader:
             "market": "futures",
             "requested_start": start_dt.isoformat(),
             "requested_end": end_dt.isoformat(),
+            "effective_end": effective_end.isoformat(),
+            "binance_server_time": server_time.isoformat(),
             "rows": {
                 "klines": len(kline_frame),
                 "funding_rate": len(funding),
@@ -333,6 +370,7 @@ class DataDownloader:
                 "Long-history OI/Basis must be imported from an archive; missing values stay null.",
                 "Basis becomes available only after its source period ends to prevent lookahead.",
             ],
+            "feature_errors": feature_errors,
         }
 
     def download_all(self, symbols: list[str], interval: str) -> None:

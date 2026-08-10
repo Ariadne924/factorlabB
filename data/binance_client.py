@@ -74,20 +74,28 @@ class BinanceClient(ExchangeBase):
                 response = self.session.get(
                     f"{base_url}{path}", params=params, timeout=self.timeout
                 )
-                if response.status_code == 429 or response.status_code >= 500:
-                    if attempt >= self.max_retries:
-                        response.raise_for_status()
-                    retry_after = response.headers.get("Retry-After")
-                    delay = float(retry_after) if retry_after else self.backoff_base * 2**attempt
-                    self._sleep(delay)
-                    continue
-                response.raise_for_status()
-                return response.json()
             except requests.RequestException as exc:
                 last_error = exc
                 if attempt >= self.max_retries:
                     raise
                 self._sleep(self.backoff_base * 2**attempt)
+                continue
+            if response.status_code == 429 or response.status_code >= 500:
+                if attempt >= self.max_retries:
+                    response.raise_for_status()
+                retry_after = response.headers.get("Retry-After")
+                delay = float(retry_after) if retry_after else self.backoff_base * 2**attempt
+                self._sleep(delay)
+                continue
+            if response.status_code >= 400:
+                try:
+                    detail = response.json()
+                except ValueError:
+                    detail = "no JSON error body"
+                raise requests.HTTPError(
+                    f"Binance {response.status_code} {path}: {detail}", response=response
+                )
+            return response.json()
         raise RuntimeError("Binance 请求重试耗尽") from last_error
 
     # ------------------------------------------------------------------
@@ -251,6 +259,11 @@ class BinanceClient(ExchangeBase):
             basis=(mark_price - index_price) / index_price,
         )
         return pd.DataFrame([record.model_dump()])
+
+    def fetch_server_time(self) -> datetime:
+        """读取 USDⓈ-M 服务器时间，用于裁剪未来或超出保留期的请求。"""
+        payload = self._get(self.futures_base_url, "/fapi/v1/time")
+        return datetime.fromtimestamp(int(payload["serverTime"]) / 1000, tz=UTC)
 
     def fetch_historical_basis(
         self,

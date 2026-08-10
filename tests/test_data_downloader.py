@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pandas as pd
+import requests
 
 from data.downloader import DataDownloader
 from data.schema import KlineRaw, raw_to_dataframe
@@ -13,6 +14,9 @@ class FakeBinanceClient:
     def __init__(self) -> None:
         self.base = datetime(2026, 1, 1, tzinfo=UTC)
         self.kline_calls = 0
+
+    def fetch_server_time(self):
+        return self.base + pd.Timedelta(hours=4)
 
     def fetch_futures_klines(self, interval, start_time, end_time, limit):
         del interval, limit
@@ -114,3 +118,22 @@ def test_download_plan_is_safe_by_default(capsys) -> None:
     assert plan["estimated_kline_rows_per_symbol"] == 25
     assert main(["--start", "2026-01-01", "--end", "2026-01-02"]) == 0
     assert '"status": "dry_run"' in capsys.readouterr().out
+
+
+def test_optional_feature_failure_does_not_discard_klines(tmp_path) -> None:
+    class PartialClient(FakeBinanceClient):
+        def fetch_open_interest(self, period, start_time, end_time, limit):
+            del period, start_time, end_time, limit
+            raise requests.HTTPError("retention window")
+
+    fake = PartialClient()
+    manifest = DataDownloader(data_dir=tmp_path, client_factory=lambda _: fake).download_bundle(
+        symbol="BTCUSDT",
+        interval="1h",
+        start="2026-01-01T00:00:00Z",
+        end="2026-01-01T03:00:00Z",
+    )
+    assert manifest["rows"]["klines"] == 4
+    assert manifest["rows"]["open_interest"] == 0
+    assert "open_interest" in manifest["feature_errors"]
+    assert pd.read_parquet(manifest["paths"]["silver_klines"]).shape[0] == 4
