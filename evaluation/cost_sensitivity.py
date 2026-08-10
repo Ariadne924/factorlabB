@@ -22,8 +22,14 @@ def compute_breakeven_cost(
     Returns:
         策略可承受的最大单边交易成本
     """
-    # TODO: 实现盈亏平衡成本计算
-    raise NotImplementedError
+    data = pd.concat([factor_values, forward_returns], axis=1).dropna()
+    if len(data) < 2:
+        return float("nan")
+    positions = data.iloc[:, 0].rank(pct=True).sub(0.5).mul(2)
+    gross = positions.shift(1).mul(data.iloc[:, 1]).fillna(0)
+    turnover = positions.diff().abs().fillna(0)
+    total_turnover = turnover.sum()
+    return float(gross.sum() / total_turnover) if total_turnover > 0 else float("nan")
 
 
 def cost_adjusted_return(
@@ -43,5 +49,10 @@ def cost_adjusted_return(
     Returns:
         扣除成本后的净收益序列
     """
-    # TODO: 实现成本调整逻辑
-    raise NotImplementedError
+    if fee_rate < 0 or slippage < 0:
+        raise ValueError("成本假设不能为负")
+    data = pd.concat([factor_values, forward_returns], axis=1).dropna()
+    positions = data.iloc[:, 0].rank(pct=True).sub(0.5).mul(2)
+    turnover = positions.diff().abs().fillna(0)
+    net = positions.shift(1).fillna(0).mul(data.iloc[:, 1]) - turnover * (fee_rate + slippage)
+    return net.rename("cost_adjusted_return")

@@ -22,8 +22,18 @@ def compute_ic_decay(factor_values: pd.Series, returns: pd.Series, max_lag: int 
     Returns:
         IC 衰减序列
     """
-    # TODO: 实现 IC 衰减分析
-    raise NotImplementedError
+    if max_lag < 1:
+        raise ValueError("max_lag 必须大于 0")
+    values = {}
+    for lag in range(1, max_lag + 1):
+        target = returns.shift(-lag)
+        aligned = pd.concat([factor_values, target], axis=1).dropna()
+        values[lag] = (
+            aligned.iloc[:, 0].rank().corr(aligned.iloc[:, 1].rank())
+            if len(aligned) >= 2
+            else float("nan")
+        )
+    return pd.Series(values, name="rank_ic", dtype="float64").rename_axis("lag")
 
 
 def turnover_analysis(factor_values: pd.DataFrame) -> pd.DataFrame:
@@ -37,5 +47,22 @@ def turnover_analysis(factor_values: pd.DataFrame) -> pd.DataFrame:
     Returns:
         换手率统计表
     """
-    # TODO: 实现换手率分析
-    raise NotImplementedError
+    if factor_values.empty:
+        return pd.DataFrame(columns=["mean_turnover", "median_turnover"])
+    ranked = factor_values.rank(pct=True)
+    changes = ranked.diff().abs()
+    return pd.DataFrame(
+        {
+            "mean_turnover": changes.mean(),
+            "median_turnover": changes.median(),
+        }
+    )
+
+
+def compute_turnover(factor_values: pd.Series) -> float:
+    """单序列的归一化秩变化率，用于同一资产的稳定性描述。"""
+    clean = factor_values.dropna()
+    if len(clean) < 2:
+        return float("nan")
+    rank = clean.rank(pct=True)
+    return float(rank.diff().abs().mean())

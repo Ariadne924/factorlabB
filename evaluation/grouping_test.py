@@ -28,5 +28,20 @@ def grouping_backtest(
     Returns:
         各组收益统计表
     """
-    # TODO: 实现分组回测逻辑
-    raise NotImplementedError
+    if n_groups < 2:
+        raise ValueError("n_groups 必须至少为 2")
+    data = pd.concat(
+        [factor_values.rename("factor"), forward_returns.rename("forward_return")], axis=1
+    ).dropna()
+    if len(data) < n_groups:
+        return pd.DataFrame(columns=["group", "mean_return", "count"])
+    ranked = data["factor"].rank(method="first")
+    data["group"] = pd.qcut(ranked, q=n_groups, labels=False) + 1
+    result = (
+        data.groupby("group", observed=True)["forward_return"]
+        .agg(mean_return="mean", count="count")
+        .reset_index()
+    )
+    spread = float(result.iloc[-1]["mean_return"] - result.iloc[0]["mean_return"])
+    result["top_bottom_spread"] = spread
+    return result

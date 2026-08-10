@@ -108,6 +108,7 @@ class KlineRaw(BaseModel):
 # 数据层转换函数（核心管道）
 # ══════════════════════════════════════════════════════════════════════
 
+
 def raw_to_dataframe(
     raw_klines: list[KlineRaw],
     *,
@@ -129,12 +130,8 @@ def raw_to_dataframe(
 
     records = [r.model_dump() for r in raw_klines]
     df = pd.DataFrame(records)
-    df["symbol"] = normalize_path_segment(
-        symbol, field_name="symbol", case="upper"
-    )
-    df["interval"] = normalize_path_segment(
-        interval, field_name="interval", case="lower"
-    )
+    df["symbol"] = normalize_path_segment(symbol, field_name="symbol", case="upper")
+    df["interval"] = normalize_path_segment(interval, field_name="interval", case="lower")
     return df
 
 
@@ -194,8 +191,7 @@ def bronze_to_silver(bronze_df: pd.DataFrame) -> pd.DataFrame:
     missing = [c for c in SILVER_COLUMNS if c not in df.columns]
     if missing:
         raise ValueError(
-            f"Silver 转换后缺少必须列: {missing}。"
-            f"Bronze 数据可能不完整，请检查原始数据源。"
+            f"Silver 转换后缺少必须列: {missing}。Bronze 数据可能不完整，请检查原始数据源。"
         )
 
     silver_df = df[SILVER_COLUMNS].copy()
@@ -212,14 +208,10 @@ def bronze_to_silver(bronze_df: pd.DataFrame) -> pd.DataFrame:
     silver_df[float_columns] = silver_df[float_columns].astype("float64")
     silver_df["num_trades"] = silver_df["num_trades"].astype("int64")
     silver_df["symbol"] = silver_df["symbol"].map(
-        lambda value: normalize_path_segment(
-            value, field_name="symbol", case="upper"
-        )
+        lambda value: normalize_path_segment(value, field_name="symbol", case="upper")
     )
     silver_df["interval"] = silver_df["interval"].map(
-        lambda value: normalize_path_segment(
-            value, field_name="interval", case="lower"
-        )
+        lambda value: normalize_path_segment(value, field_name="interval", case="lower")
     )
 
     from data.validator import DataValidator
@@ -231,6 +223,7 @@ def bronze_to_silver(bronze_df: pd.DataFrame) -> pd.DataFrame:
 # ══════════════════════════════════════════════════════════════════════
 # 逐笔成交 Schema（Bronze 入口校验）
 # ══════════════════════════════════════════════════════════════════════
+
 
 class TradeRaw(BaseModel):
     """逐笔成交原始数据格式（API 边界校验）
@@ -244,18 +237,172 @@ class TradeRaw(BaseModel):
     quantity: float = Field(..., gt=0, description="成交数量")
     side: Literal["buy", "sell"] = Field(..., description="成交方向：buy / sell")
     symbol: str = Field(..., min_length=1, description="交易对 ID")
+    trade_id: int | None = Field(default=None, ge=0, description="交易所成交 ID")
+    quote_quantity: float | None = Field(default=None, ge=0, description="计价资产成交额")
 
     @field_validator("timestamp")
     @classmethod
     def _ensure_utc(cls, v: datetime) -> datetime:
         """确保时间戳带 UTC 时区——naive datetime 直接拒绝"""
         if v.tzinfo is None:
-            raise ValueError(
-                "TradeRaw.timestamp 必须带时区信息（UTC），不能是 naive datetime"
-            )
+            raise ValueError("TradeRaw.timestamp 必须带时区信息（UTC），不能是 naive datetime")
         if v.tzinfo.utcoffset(v) != UTC.utcoffset(v):
             return v.astimezone(UTC)
         return v
+
+    model_config = {"extra": "forbid"}
+
+    @classmethod
+    def from_binance_payload(cls, payload: dict[str, Any], *, symbol: str) -> TradeRaw:
+        """将 Binance aggTrades 或 trades 响应映射为统一成交 Schema。"""
+        timestamp = payload.get("T", payload.get("time"))
+        price = payload.get("p", payload.get("price"))
+        quantity = payload.get("q", payload.get("qty"))
+        trade_id = payload.get("a", payload.get("id"))
+        buyer_is_maker = payload.get("m", payload.get("isBuyerMaker"))
+        if timestamp is None or price is None or quantity is None or buyer_is_maker is None:
+            raise ValueError("Binance 成交响应缺少时间、价格、数量或 maker 方向字段")
+        quote_quantity = payload.get("quoteQty")
+        if quote_quantity is None:
+            quote_quantity = float(price) * float(quantity)
+        return cls(
+            timestamp=datetime.fromtimestamp(int(timestamp) / 1000, tz=UTC),
+            price=float(price),
+            quantity=float(quantity),
+            quote_quantity=float(quote_quantity),
+            side="sell" if bool(buyer_is_maker) else "buy",
+            trade_id=int(trade_id) if trade_id is not None else None,
+            symbol=normalize_path_segment(symbol, field_name="symbol", case="upper"),
+        )
+
+
+class DepthLevel(BaseModel):
+    """统一盘口单档报价。"""
+
+    price: float = Field(..., gt=0)
+    quantity: float = Field(..., ge=0)
+
+    model_config = {"extra": "forbid"}
+
+
+class OrderBookRaw(BaseModel):
+    """统一盘口快照 Schema。"""
+
+    timestamp: datetime
+    symbol: str = Field(..., min_length=1)
+    last_update_id: int = Field(..., ge=0)
+    bids: list[DepthLevel]
+    asks: list[DepthLevel]
+
+    @field_validator("timestamp")
+    @classmethod
+    def _ensure_depth_utc(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("OrderBookRaw.timestamp 必须带 UTC 时区")
+        return value.astimezone(UTC)
+
+    @model_validator(mode="after")
+    def _validate_book(self) -> OrderBookRaw:
+        if not self.bids or not self.asks:
+            raise ValueError("盘口快照必须同时包含 bid 和 ask")
+        if max(level.price for level in self.bids) >= min(level.price for level in self.asks):
+            raise ValueError("盘口交叉：best bid 必须小于 best ask")
+        return self
+
+    @classmethod
+    def from_binance_payload(
+        cls,
+        payload: dict[str, Any],
+        *,
+        symbol: str,
+        timestamp: datetime,
+    ) -> OrderBookRaw:
+        try:
+            bids = [DepthLevel(price=float(x[0]), quantity=float(x[1])) for x in payload["bids"]]
+            asks = [DepthLevel(price=float(x[0]), quantity=float(x[1])) for x in payload["asks"]]
+            update_id = int(payload["lastUpdateId"])
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            raise ValueError("Binance 盘口响应结构不合法") from exc
+        return cls(
+            timestamp=timestamp,
+            symbol=normalize_path_segment(symbol, field_name="symbol", case="upper"),
+            last_update_id=update_id,
+            bids=bids,
+            asks=asks,
+        )
+
+    model_config = {"extra": "forbid"}
+
+
+def trades_to_dataframe(trades: list[TradeRaw]) -> pd.DataFrame:
+    """统一成交 Schema 转为稳定列顺序的 DataFrame。"""
+    columns = [
+        "timestamp",
+        "symbol",
+        "trade_id",
+        "price",
+        "quantity",
+        "quote_quantity",
+        "side",
+    ]
+    if not trades:
+        return pd.DataFrame(columns=columns)
+    frame = pd.DataFrame([trade.model_dump() for trade in trades])
+    frame["timestamp"] = pd.to_datetime(frame["timestamp"], utc=True)
+    return frame[columns].sort_values("timestamp").reset_index(drop=True)
+
+
+def order_book_to_dataframe(book: OrderBookRaw) -> pd.DataFrame:
+    """将盘口快照展开为 bid/ask 逐档统一表。"""
+    records: list[dict[str, Any]] = []
+    for side, levels in (("bid", book.bids), ("ask", book.asks)):
+        for level_number, level in enumerate(levels, start=1):
+            records.append(
+                {
+                    "timestamp": book.timestamp,
+                    "symbol": book.symbol,
+                    "last_update_id": book.last_update_id,
+                    "side": side,
+                    "level": level_number,
+                    "price": level.price,
+                    "quantity": level.quantity,
+                }
+            )
+    return pd.DataFrame.from_records(records)
+
+
+class OpenInterestRaw(BaseModel):
+    """统一持仓量记录。"""
+
+    timestamp: datetime
+    symbol: str = Field(..., min_length=1)
+    open_interest: float = Field(..., ge=0)
+
+    @field_validator("timestamp")
+    @classmethod
+    def _ensure_oi_utc(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("OpenInterestRaw.timestamp 必须带 UTC 时区")
+        return value.astimezone(UTC)
+
+    model_config = {"extra": "forbid"}
+
+
+class BasisRaw(BaseModel):
+    """统一永续相对现货指数基差记录。"""
+
+    timestamp: datetime
+    symbol: str = Field(..., min_length=1)
+    mark_price: float = Field(..., gt=0)
+    index_price: float = Field(..., gt=0)
+    basis: float
+
+    @field_validator("timestamp")
+    @classmethod
+    def _ensure_basis_utc(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("BasisRaw.timestamp 必须带 UTC 时区")
+        return value.astimezone(UTC)
 
     model_config = {"extra": "forbid"}
 
@@ -263,6 +410,7 @@ class TradeRaw(BaseModel):
 # ══════════════════════════════════════════════════════════════════════
 # 资金费率 Schema（Bronze 入口校验）
 # ══════════════════════════════════════════════════════════════════════
+
 
 class FundingRateRaw(BaseModel):
     """资金费率原始数据格式（API 边界校验）

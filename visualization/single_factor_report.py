@@ -1,16 +1,135 @@
-"""
-单因子分析报告
-
-生成单个因子的完整分析报告，包括：
-- IC 序列图
-- 分组收益柱状图
-- 因子值分布直方图
-- IC 衰减曲线
-"""
+"""单因子报告数据构建与轻量 HTML/JSON 输出。"""
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+from typing import Any
+
+import numpy as np
 import pandas as pd
+
+from evaluation.grouping_test import grouping_backtest
+from evaluation.ic_analysis import compute_ic, compute_rank_ic, rolling_ic
+from evaluation.stability import compute_ic_decay, compute_turnover
+
+
+def _number(value: Any) -> float | None:
+    return None if pd.isna(value) or not np.isfinite(value) else float(value)
+
+
+def insufficient_report(factor_name: str, reason: str) -> dict[str, Any]:
+    """构造无数据报告；所有实证指标保持为空。"""
+    return {
+        "factor_name": factor_name,
+        "status": "insufficient_data",
+        "reason": reason,
+        "sample": {"start": None, "end": None, "frequency": None, "n_obs": 0},
+        "metrics": {"ic": None, "rank_ic": None, "icir": None, "turnover": None},
+        "ic_decay": [],
+        "group_returns": [],
+        "rolling_ic": [],
+        "lookahead_status": "not_run",
+        "cost_assumptions": {"fee_rate": 0.001, "slippage": 0.0005, "units": "one-way"},
+        "research_note": "无足够真实样本；不得据此宣称已验证 alpha 或完成 6 个月 OOS。",
+    }
+
+
+def build_single_factor_report_data(
+    factor_name: str,
+    factor_values: pd.Series,
+    forward_returns: pd.Series,
+    *,
+    frequency: str | None = None,
+    rolling_window: int = 20,
+    max_lag: int = 10,
+    n_groups: int = 5,
+    lookahead_status: str = "not_run",
+    fee_rate: float = 0.001,
+    slippage: float = 0.0005,
+) -> dict[str, Any]:
+    aligned = pd.concat(
+        [factor_values.rename("factor"), forward_returns.rename("forward_return")], axis=1
+    ).dropna()
+    if len(aligned) < max(5, n_groups):
+        return insufficient_report(factor_name, f"有效因子/收益配对仅 {len(aligned)} 条")
+
+    ic = compute_ic(aligned["factor"], aligned["forward_return"])
+    rank_ic_value = compute_rank_ic(aligned["factor"], aligned["forward_return"])
+    window = min(rolling_window, len(aligned))
+    rolling = rolling_ic(
+        aligned["factor"], aligned["forward_return"], window=max(3, window)
+    ).dropna()
+    rolling_std = rolling.std(ddof=1)
+    icir = (
+        rolling.mean() / rolling_std if pd.notna(rolling_std) and rolling_std > 0 else float("nan")
+    )
+    decay = compute_ic_decay(
+        aligned["factor"], aligned["forward_return"], max_lag=min(max_lag, len(aligned) - 1)
+    )
+    groups = grouping_backtest(
+        aligned["factor"], aligned["forward_return"], n_groups=min(n_groups, len(aligned))
+    )
+    sample_index = aligned.index
+    start = (
+        sample_index.min().isoformat()
+        if isinstance(sample_index, pd.DatetimeIndex)
+        else str(sample_index.min())
+    )
+    end = (
+        sample_index.max().isoformat()
+        if isinstance(sample_index, pd.DatetimeIndex)
+        else str(sample_index.max())
+    )
+    return {
+        "factor_name": factor_name,
+        "status": "computed_short_sample",
+        "sample": {"start": start, "end": end, "frequency": frequency, "n_obs": len(aligned)},
+        "metrics": {
+            "ic": _number(ic),
+            "rank_ic": _number(rank_ic_value),
+            "icir": _number(icir),
+            "turnover": _number(compute_turnover(aligned["factor"])),
+        },
+        "ic_decay": [{"lag": int(lag), "rank_ic": _number(value)} for lag, value in decay.items()],
+        "group_returns": [
+            {
+                "group": int(row["group"]),
+                "mean_return": _number(row["mean_return"]),
+                "count": int(row["count"]),
+                "top_bottom_spread": _number(row["top_bottom_spread"]),
+            }
+            for _, row in groups.iterrows()
+        ],
+        "rolling_ic": [
+            {"time": str(index), "value": _number(value)} for index, value in rolling.items()
+        ],
+        "lookahead_status": lookahead_status,
+        "cost_assumptions": {"fee_rate": fee_rate, "slippage": slippage, "units": "one-way"},
+        "research_note": (
+            "指标仅描述当前样本；短样本 IC 不代表已验证 alpha，"
+            "亦不表示完成 6 个月 OOS。"
+        ),
+    }
+
+
+def write_report_data(report: dict[str, Any], output_path: str | Path) -> Path:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.suffix.lower() == ".json":
+        path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    else:
+        escaped = (
+            json.dumps(report, ensure_ascii=False, indent=2)
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+        )
+        path.write_text(
+            f"<!doctype html><meta charset='utf-8'><title>{report['factor_name']}</title>"
+            f"<h1>{report['factor_name']}</h1><pre>{escaped}</pre>",
+            encoding="utf-8",
+        )
+    return path
 
 
 def generate_single_factor_report(
@@ -19,13 +138,7 @@ def generate_single_factor_report(
     forward_returns: pd.Series,
     output_path: str = "",
 ) -> None:
-    """生成单因子分析报告（HTML）
-
-    Args:
-        factor_name: 因子名称
-        factor_values: 因子值序列
-        forward_returns: 前向收益率序列
-        output_path: 报告输出路径
-    """
-    # TODO: 实现报告生成逻辑
-    raise NotImplementedError
+    """兼容旧入口；构建报告并在给定路径写入 HTML 或 JSON。"""
+    report = build_single_factor_report_data(factor_name, factor_values, forward_returns)
+    if output_path:
+        write_report_data(report, output_path)

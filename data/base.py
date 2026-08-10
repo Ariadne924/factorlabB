@@ -75,6 +75,14 @@ class ExchangeBase(ABC):
         """
         raise NotImplementedError
 
+    def fetch_depth(self, limit: int = 100) -> pd.DataFrame:
+        """获取盘口快照。
+
+        该方法不是抽象方法，以免破坏尚未实现盘口接口的第二交易所客户端。
+        支持盘口的客户端应返回统一的逐档 DataFrame。
+        """
+        raise NotImplementedError(f"{self.exchange_name} 尚未实现盘口接口")
+
     # ------------------------------------------------------------------
     # 资金费率
     # ------------------------------------------------------------------

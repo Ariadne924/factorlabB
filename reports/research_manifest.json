@@ -1,0 +1,22 @@
+{
+  "status": "insufficient_data",
+  "silver_files": [],
+  "factor_count": 13,
+  "reports": [
+    "single_factor\\funding_rate.json",
+    "single_factor\\open_interest_change.json",
+    "single_factor\\basis.json",
+    "single_factor\\return_momentum.json",
+    "single_factor\\short_term_reversal.json",
+    "single_factor\\moving_average_gap.json",
+    "single_factor\\rsi.json",
+    "single_factor\\realized_volatility.json",
+    "single_factor\\range_volatility.json",
+    "single_factor\\downside_volatility.json",
+    "single_factor\\volume_momentum.json",
+    "single_factor\\amihud_illiquidity.json",
+    "single_factor\\taker_buy_ratio.json"
+  ],
+  "oos_6_months_completed": false,
+  "note": "不生成合成样本；短样本指标不得表述为已验证 alpha。"
+}

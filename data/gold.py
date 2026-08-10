@@ -32,15 +32,9 @@ def gold_factor_path(
     Returns:
         文件路径
     """
-    normalized_symbol = normalize_path_segment(
-        symbol, field_name="symbol", case="upper"
-    )
-    normalized_interval = normalize_path_segment(
-        interval, field_name="interval", case="lower"
-    )
-    normalized_factor = normalize_path_segment(
-        factor_name, field_name="factor_name"
-    )
+    normalized_symbol = normalize_path_segment(symbol, field_name="symbol", case="upper")
+    normalized_interval = normalize_path_segment(interval, field_name="interval", case="lower")
+    normalized_factor = normalize_path_segment(factor_name, field_name="factor_name")
     return safe_data_path(
         DEFAULT_DATA_DIR,
         "gold",
@@ -119,3 +113,27 @@ def list_gold_factors(
     if not base.exists():
         return []
     return sorted([p.stem for p in base.glob("*.parquet")])
+
+
+def compute_and_write_gold_factors(
+    factor_input: pd.DataFrame,
+    *,
+    symbol: str,
+    interval: str,
+    factor_names: list[str] | None = None,
+) -> dict[str, Path]:
+    """使用现有 registry 计算并写入一组 Gold 因子。"""
+    import factors  # noqa: F401 — 触发正式因子注册
+    from factors.registry import compute_factor, list_factors
+
+    selected = factor_names if factor_names is not None else list_factors()
+    paths: dict[str, Path] = {}
+    for factor_name in selected:
+        series = compute_factor(factor_name, factor_input)
+        paths[factor_name] = write_gold_factor(
+            series,
+            symbol=symbol,
+            interval=interval,
+            factor_name=factor_name,
+        )
+    return paths
