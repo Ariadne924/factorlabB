@@ -18,9 +18,11 @@ import factors  # noqa: E402,F401
 from config.constants import get_interval_ms  # noqa: E402
 from data.catalog import build_data_catalog  # noqa: E402
 from data.health import build_data_health_report  # noqa: E402
+from data.live_market import live_snapshot_status, load_live_snapshot  # noqa: E402
 from data.panel_loader import load_silver_panel  # noqa: E402
 from data.refresh import refresh_recent_market_data  # noqa: E402
 from data.silver import silver_to_factor_input  # noqa: E402
+from data.training_readiness import build_training_readiness_report  # noqa: E402
 from evaluation.panel_strategy import (  # noqa: E402
     FactorAllocation,
     PanelStrategyConfig,
@@ -47,7 +49,20 @@ from evaluation.time_series_strategy import (  # noqa: E402
 from factors.panel_registry import list_panel_factors  # noqa: E402
 from factors.registry import list_factors  # noqa: E402
 from scripts.run_ml_factor_mining import run as run_ml_factor_research  # noqa: E402
-from visualization.report_discovery import load_factor_reports  # noqa: E402
+from visualization.navigation import (  # noqa: E402
+    FACTOR_VALIDATION_TABS,
+    LEGACY_PAGE_REDIRECTS,
+    PRIMARY_PAGES,
+    STRATEGY_RESEARCH_VIEWS,
+    apply_pending_navigation,
+    queue_navigation,
+)
+from visualization.report_discovery import (  # noqa: E402
+    infer_report_scope,
+    load_factor_reports,
+    load_single_factor_index,
+)
+from visualization.report_health import inspect_report_generation  # noqa: E402
 from visualization.strategy_store import (  # noqa: E402
     compare_strategy_snapshots,
     load_strategy_snapshots,
@@ -62,6 +77,7 @@ from visualization.workflow import (  # noqa: E402
 )
 
 REPORT_ROOT = PROJECT_ROOT / "reports"
+LIVE_SNAPSHOT_PATH = REPORT_ROOT / "live_market.json"
 STRATEGY_STORE = REPORT_ROOT / "strategy_snapshots"
 REFRESH_SYMBOLS = (
     "BTCUSDT",
@@ -82,6 +98,8 @@ REFRESH_INTERVALS = ("1m", "5m", "15m", "1h", "6h", "24h")
 
 @st.cache_data(ttl=30)
 def load_reports(directory: Path) -> list[dict[str, Any]]:
+    if directory.name == "single_factor":
+        return load_single_factor_index(REPORT_ROOT / "research_summary.json", directory)
     return load_factor_reports(
         directory,
         require_symbol=directory.name in {"single_factor", "ml_factor"},
@@ -97,6 +115,11 @@ def load_summary() -> dict[str, Any]:
 @st.cache_data(ttl=30)
 def load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text("utf-8")) if path.exists() else {}
+
+
+@st.cache_data(ttl=30)
+def load_report_health() -> dict[str, Any]:
+    return inspect_report_generation(REPORT_ROOT)
 
 
 @st.cache_data(ttl=30)
@@ -125,8 +148,8 @@ def metric_value(value: object) -> str:
     return "N/A" if pd.isna(value) else f"{float(value):.4f}"
 
 
-def navigate_to(page_name: str) -> None:
-    st.session_state["page_selector"] = page_name
+def navigate_to(page_name: str, strategy_view: str | None = None) -> None:
+    queue_navigation(st.session_state, page_name, strategy_view)
 
 
 def render_workflow_overview(steps: list[WorkflowStep]) -> None:
@@ -178,7 +201,7 @@ def apply_ml_preset(report: dict[str, Any]) -> None:
         st.session_state[f"ts_direction_{name}"] = (
             "正向" if int(row["direction"]) == 1 else "反向"
         )
-    st.session_state["page_selector"] = "时序策略"
+    navigate_to("策略研究", "单币种择时")
 
 
 def render_strategy_result(result: dict[str, Any], *, key_prefix: str) -> None:
@@ -289,7 +312,7 @@ def render_time_series_robustness(result: dict[str, Any]) -> None:
     with perturbation_tab:
         context = st.session_state.get("time_series_strategy_context")
         if not context:
-            st.info("重新运行一次时序策略后即可进行参数扰动。")
+            st.info("重新运行一次单币种择时策略后即可进行参数扰动。")
         else:
             st.caption("采用小型邻域网格，不自动寻找最优参数。")
             base_config: TimeSeriesStrategyConfig = context["config"]
@@ -627,11 +650,11 @@ def render_strategy_store(
 
 
 def render_saved_strategy_comparison() -> None:
-    st.header("Saved Strategy Comparison")
+    st.subheader("结果比较")
     st.caption("只比较用户显式保存的本地快照；不会把当前交互结果自动落盘。")
     snapshots = load_strategy_snapshots(STRATEGY_STORE)
     if not snapshots:
-        st.info("还没有策略快照。请先在时序策略页面运行并保存。")
+        st.info("还没有策略快照。请先在‘单币种择时’中运行并保存策略。")
         return
     labels = [
         f"{row.get('name')} · {row.get('symbol')} · {row.get('interval')}"
@@ -779,10 +802,149 @@ def render_panel_report(selected: dict[str, Any]) -> None:
     st.json(selected.get("provenance", {}))
 
 
+@st.fragment(run_every="2s")
+def render_live_market() -> None:
+    """读取独立采集进程写入的秒级快照；页面刷新不会中断采集。"""
+    snapshot = load_live_snapshot(LIVE_SNAPSHOT_PATH)
+    status, age_seconds = live_snapshot_status(snapshot)
+    status_labels = {
+        "live": "在线",
+        "stale": "快照已过期",
+        "offline": "未启动",
+        "error": "采集异常",
+    }
+    header = st.columns(4)
+    header[0].metric("采集状态", status_labels[status])
+    header[1].metric(
+        "快照延迟",
+        "N/A" if age_seconds is None else f"{age_seconds:.1f} 秒",
+    )
+    header[2].metric("消息数", int(snapshot.get("message_count", 0)))
+    header[3].metric("行情来源", "Binance Spot + USD-M")
+
+    alerts = snapshot.get("active_alerts", [])
+    if alerts:
+        with st.expander(f"市场异动提醒（{len(alerts)}）", expanded=True):
+            for alert in alerts:
+                message = str(alert.get("message", "市场异动"))
+                if alert.get("severity") == "high":
+                    st.error(message)
+                else:
+                    st.warning(message)
+    else:
+        st.success("当前没有达到阈值的市场异动。")
+
+    if status != "live":
+        if status == "stale":
+            st.warning("采集进程可能已经停止，页面正在显示最后一次快照。")
+        elif status == "error":
+            st.error(f"采集器异常：{snapshot.get('error') or '未记录错误详情'}")
+        else:
+            st.info("先在另一个终端启动采集器；本页会在收到数据后自动更新。")
+        st.code(
+            "python scripts/run_live_market.py",
+            language="bash",
+        )
+        st.caption("公开行情不需要 Binance API Key；VPN 或地区网络策略可能影响连接。")
+
+    symbol_states = snapshot.get("symbols", {})
+    if not symbol_states:
+        return
+    selected_symbol = st.selectbox(
+        "查看交易对",
+        sorted(symbol_states),
+        key="live_market_symbol",
+    )
+    selected = symbol_states[selected_symbol]
+    trade = selected.get("last_trade", {})
+    book = selected.get("book", {})
+    derivatives = selected.get("derivatives", {})
+    kline = selected.get("current_kline", {})
+    metrics = st.columns(6)
+    metrics[0].metric("最新成交价", metric_value(trade.get("price")))
+    metrics[1].metric("Best bid", metric_value(book.get("bid_price")))
+    metrics[2].metric("Best ask", metric_value(book.get("ask_price")))
+    metrics[3].metric("点差 (bps)", metric_value(book.get("spread_bps")))
+    metrics[4].metric("资金费率", metric_value(derivatives.get("funding_rate")))
+    metrics[5].metric("永续基差", metric_value(derivatives.get("basis")))
+
+    trades = pd.DataFrame(selected.get("recent_trades", []))
+    depth = selected.get("depth", {})
+    bids = pd.DataFrame(depth.get("bids", []), columns=["price", "quantity"])
+    asks = pd.DataFrame(depth.get("asks", []), columns=["price", "quantity"])
+    trade_tab, order_book_tab, kline_tab = st.tabs(["最近成交", "五档盘口", "当前 K 线"])
+    with trade_tab:
+        if trades.empty:
+            st.info("等待逐笔成交事件。")
+        else:
+            trades["timestamp"] = pd.to_datetime(trades["timestamp"], utc=True)
+            st.line_chart(trades.set_index("timestamp")["price"])
+            st.dataframe(
+                trades.sort_values("timestamp", ascending=False),
+                use_container_width=True,
+                hide_index=True,
+            )
+    with order_book_tab:
+        bid_column, ask_column = st.columns(2)
+        bid_column.markdown("**买盘**")
+        bid_column.dataframe(bids, use_container_width=True, hide_index=True)
+        ask_column.markdown("**卖盘**")
+        ask_column.dataframe(asks, use_container_width=True, hide_index=True)
+    with kline_tab:
+        if not kline:
+            st.info("等待 K 线事件。")
+        else:
+            kline_metrics = st.columns(5)
+            for column, key, label in zip(
+                kline_metrics,
+                ("open", "high", "low", "close", "volume"),
+                ("Open", "High", "Low", "Close", "Volume"),
+                strict=True,
+            ):
+                column.metric(label, metric_value(kline.get(key)))
+            safety = (
+                "已收盘，可进入研究数据"
+                if kline.get("closed")
+                else "形成中，不用于正式因子/回测"
+            )
+            st.info(safety)
+            st.json(kline)
+    st.caption(
+        f"快照更新时间：{snapshot.get('updated_at') or 'unknown'}。"
+        "页面每 2 秒读取一次本地快照；Funding/Basis 使用公开流并由 60 秒 REST 轮询兜底，"
+        "OI 仍由数据中心 REST 补充。"
+    )
+
+
 @st.fragment(run_every="30s")
 def render_data_center() -> None:
     """Poll local coverage and offer an explicit bounded REST refresh."""
     st.caption("本页每 30 秒重新读取本地状态；所有联网操作仍需用户主动点击。")
+    research_status = load_json(REPORT_ROOT / "research_status.json")
+    if research_status:
+        st.subheader("研究任务状态")
+        task_columns = st.columns(4)
+        task_columns[0].metric("状态", research_status.get("status", "unknown"))
+        task_columns[1].metric(
+            "完成口径",
+            f"{research_status.get('completed_scopes', 0)}/"
+            f"{research_status.get('total_scopes', 0)}",
+        )
+        task_columns[2].metric(
+            "缓存命中口径", research_status.get("cache_hit_scopes", 0)
+        )
+        task_columns[3].metric(
+            "完成任务", research_status.get("completed_tasks", 0)
+        )
+        progress_value = min(1.0, max(0.0, float(research_status.get("progress", 0))))
+        st.progress(progress_value, text=f"研究进度 {progress_value:.0%}")
+        if research_status.get("status") == "running":
+            st.caption(
+                f"当前口径：{research_status.get('current_scope') or '准备中'} · "
+                f"当前因子：{research_status.get('current_factor') or '准备中'}"
+            )
+        if research_status.get("error"):
+            st.error(str(research_status["error"]))
     with st.expander("数据操作：刷新、扫描与高级范围", expanded=False):
         refresh_symbols = st.multiselect(
             "刷新币种",
@@ -885,7 +1047,7 @@ def render_data_center() -> None:
         st.warning("先完成 P0 数据任务；已有可研究口径仍可用于策略原型，但不能代表全口径完成。")
         st.code("python scripts/collect_real_data.py --execute", language="bash")
     else:
-        st.info("核心数据没有 P0 阻塞项，可以进入时序策略或截面回测。")
+        st.info("核心数据没有 P0 阻塞项，可以进入单币种择时或多币种选币。")
 
     dataset_health = pd.DataFrame(health["datasets"])
     status_labels = {
@@ -976,24 +1138,22 @@ st.set_page_config(page_title="Crypto Factor Lab", layout="wide")
 st.title("Crypto Factor Lab")
 st.caption("从数据准备 → 策略构建 → 稳健性验证；研究结果不等同于已验证 Alpha。")
 
+apply_pending_navigation(st.session_state)
+legacy_page = st.session_state.get("page_selector")
+if legacy_page in LEGACY_PAGE_REDIRECTS:
+    migrated_page, migrated_view = LEGACY_PAGE_REDIRECTS[str(legacy_page)]
+    st.session_state["page_selector"] = migrated_page
+    if migrated_view is not None:
+        st.session_state["strategy_research_view"] = migrated_view
+
 page = st.sidebar.radio(
     "功能入口",
-    [
-        "开始使用",
-        "数据中心",
-        "时序策略",
-        "多因子回测",
-        "策略比较",
-        "因子研究",
-        "机器学习",
-        "截面因子",
-        "跨口径稳健性",
-    ],
+    PRIMARY_PAGES,
     key="page_selector",
 )
-st.sidebar.caption("推荐路径：开始使用 → 数据中心 → 策略构建 → 验证与比较")
+st.sidebar.caption("推荐路径：开始使用 → 实时行情 / 数据中心 → 策略构建 → 验证与比较")
 st.sidebar.divider()
-st.sidebar.caption("因子研究与机器学习保留为研究工具，本轮不继续扩展检验范围。")
+st.sidebar.caption("策略构建与比较统一在‘策略研究’；因子结果统一在‘因子检验’。")
 
 header_catalog = load_json(REPORT_ROOT / "data_catalog.json")
 header_entries = list(header_catalog.get("entries", []))
@@ -1035,8 +1195,8 @@ frequencies = sorted({scope(item)[1] for item in reports})
 categories = sorted(
     {str(item.get("provenance", {}).get("category") or "未分类") for item in reports}
 )
-if page == "因子研究":
-    st.sidebar.subheader("研究筛选")
+if page == "因子检验":
+    st.sidebar.subheader("单资产报告筛选")
     factor_query = st.sidebar.text_input("搜索因子名称").strip().lower()
     selected_symbols = st.sidebar.multiselect("资产", symbols, default=symbols)
     selected_frequencies = st.sidebar.multiselect("频率", frequencies, default=frequencies)
@@ -1054,6 +1214,16 @@ filtered = [
     and str(item.get("provenance", {}).get("category") or "未分类") in selected_categories
     and factor_query in str(item.get("factor_name", "")).lower()
 ]
+strategy_view: str | None = None
+if page == "策略研究":
+    st.header("策略研究")
+    st.caption("先选择研究目标，再配置数据、因子和成本；三个模式共用一个入口。")
+    strategy_view = st.radio(
+        "研究模式",
+        STRATEGY_RESEARCH_VIEWS,
+        horizontal=True,
+        key="strategy_research_view",
+    )
 
 if page == "开始使用":
     st.header("研究工作台")
@@ -1066,31 +1236,31 @@ if page == "开始使用":
         st.write("**单币种择时**")
         st.caption("选择多个因子、方向和权重，完成含成本时序回测。")
         st.button(
-            "打开时序策略",
+            "打开单币种择时",
             key="quick_time_series",
             use_container_width=True,
             on_click=navigate_to,
-            args=("时序策略",),
+            args=("策略研究", "单币种择时"),
         )
     with quick_columns[1].container(border=True):
         st.write("**多币种选币**")
         st.caption("使用同频率多资产面板构建截面多因子组合。")
         st.button(
-            "打开多因子回测",
+            "打开多币种选币",
             key="quick_panel_strategy",
             use_container_width=True,
             on_click=navigate_to,
-            args=("多因子回测",),
+            args=("策略研究", "多币种选币"),
         )
     with quick_columns[2].container(border=True):
         st.write("**已有结果比较**")
         st.caption("比较用户明确保存的策略快照，不自动混入临时结果。")
         st.button(
-            "打开策略比较",
+            "打开结果比较",
             key="quick_strategy_compare",
             use_container_width=True,
             on_click=navigate_to,
-            args=("策略比较",),
+            args=("策略研究", "结果比较"),
         )
 
     p0_tasks = [row for row in build_data_tasks(header_health) if row["priority"] == "P0"]
@@ -1111,92 +1281,156 @@ if page == "开始使用":
             "- **已完成**：只表示流程产物已生成，不表示策略已通过六个月 OOS。"
         )
 
-elif page == "因子研究":
-    st.header("Factor Explorer")
-    st.info("本轮暂停扩展因子检验；这里保留已有报告的浏览、筛选和追溯能力。")
-    if not filtered:
-        st.warning("当前筛选条件下没有报告。")
+elif page == "实时行情":
+    st.header("实时行情")
+    st.caption("秒级查看成交、盘口、当前 K 线与永续指标；采集器和页面彼此独立。")
+    render_live_market()
+
+elif page == "因子检验":
+    st.header("因子检验")
+    st.caption("在一个页面完成单币种、多币种和跨口径检验；页面分区不同，判断目标不同。")
+    grade_report = load_json(REPORT_ROOT / "factor_grades" / "latest.json")
+    grade_rows = pd.DataFrame(grade_report.get("factors", []))
+    if grade_rows.empty:
+        st.info("尚未生成因子等级。运行 python scripts/grade_factors.py 后可查看轮动结果。")
     else:
-        summary_rows = []
-        for item in filtered:
-            symbol, frequency = scope(item)
-            summary_rows.append(
+        grade_summary = grade_report.get("summary", {})
+        tier_counts = grade_summary.get("tier_counts", {})
+        grade_columns = st.columns(5)
+        grade_columns[0].metric("全部保留", grade_summary.get("retained_factor_count", 0))
+        for index, tier in enumerate(("A", "B", "C", "D"), start=1):
+            grade_columns[index].metric(f"{tier} 级", tier_counts.get(tier, 0))
+        with st.expander("因子等级与轮动", expanded=True):
+            tier_filter = st.multiselect(
+                "等级",
+                ["A", "B", "C", "D"],
+                default=["A", "B", "C", "D"],
+                key="factor_grade_tiers",
+            )
+            visible_grades = grade_rows.loc[grade_rows["tier"].isin(tier_filter)]
+            st.dataframe(
+                visible_grades[
+                    [
+                        "factor_name",
+                        "scope_type",
+                        "tier",
+                        "tier_label",
+                        "score",
+                        "scope_count",
+                        "median_rank_ic",
+                        "ml_train_stability",
+                        "rotation_movement",
+                        "retained",
+                    ]
+                ],
+                use_container_width=True,
+                hide_index=True,
+            )
+            st.caption(
+                f"下次轮动：{grade_report.get('next_rotation_at')}。"
+                "低评级因子不会删除，只降低当前研究优先级。"
+            )
+    single_tab, panel_tab, cross_tab = st.tabs(FACTOR_VALIDATION_TABS)
+
+    with single_tab:
+        st.subheader("单资产因子")
+        st.caption("判断一个因子对某个币种的未来收益是否有稳定解释力。")
+        if not filtered:
+            st.warning("当前筛选条件下没有报告。")
+        else:
+            summary_rows = []
+            for item in filtered:
+                symbol, frequency = scope(item)
+                summary_rows.append(
+                    {
+                        "symbol": symbol,
+                        "frequency": frequency,
+                        "factor": item.get("factor_name"),
+                        "category": item.get("provenance", {}).get("category"),
+                        "status": item.get("status"),
+                        **item.get("metrics", {}),
+                        "lookahead": item.get("lookahead_status"),
+                        "fdr_5pct": item.get("robustness", {})
+                        .get("multiple_testing", {})
+                        .get("reject_fdr_5pct"),
+                    }
+                )
+            overview = st.columns(4)
+            overview[0].metric("报告数", len(filtered))
+            overview[1].metric(
+                "已计算",
+                sum(item.get("status") != "insufficient_data" for item in filtered),
+            )
+            overview[2].metric(
+                "前视检查通过",
+                sum(item.get("lookahead_status") == "pass" for item in filtered),
+            )
+            overview[3].metric(
+                "FDR 5%", sum(row["fdr_5pct"] is True for row in summary_rows)
+            )
+            with st.expander("因子比较表", expanded=False):
+                st.dataframe(
+                    pd.DataFrame(summary_rows), use_container_width=True, hide_index=True
+                )
+            labels = [
+                f"{scope(item)[0]} · {scope(item)[1]} · {item.get('factor_name')}"
+                for item in filtered
+            ]
+            choice = st.selectbox(
+                "选择单资产报告",
+                range(len(labels)),
+                format_func=labels.__getitem__,
+            )
+            selected_summary = filtered[choice]
+            selected_path = REPORT_ROOT / "single_factor" / selected_summary["_file"]
+            selected_report = infer_report_scope(load_json(selected_path), selected_path)
+            render_single_report(selected_report)
+
+    with panel_tab:
+        st.subheader("截面因子")
+        st.caption("判断同一时点上，因子能否区分不同币种的相对强弱。")
+        panel_reports = load_reports(REPORT_ROOT / "panel_factor")
+        if not panel_reports:
+            st.info("尚无截面报告。至少准备 3 个同频率币种后运行研究入口。")
+        else:
+            panel_rows = [
                 {
-                    "symbol": symbol,
-                    "frequency": frequency,
                     "factor": item.get("factor_name"),
-                    "category": item.get("provenance", {}).get("category"),
+                    "interval": item.get("interval"),
                     "status": item.get("status"),
                     **item.get("metrics", {}),
                     "lookahead": item.get("lookahead_status"),
-                    "fdr_5pct": item.get("robustness", {})
-                    .get("multiple_testing", {})
-                    .get("reject_fdr_5pct"),
                 }
+                for item in panel_reports
+            ]
+            st.dataframe(pd.DataFrame(panel_rows), use_container_width=True, hide_index=True)
+            labels = [
+                f"{item.get('interval')} · {item.get('factor_name')}"
+                for item in panel_reports
+            ]
+            choice = st.selectbox(
+                "选择截面报告",
+                range(len(labels)),
+                format_func=labels.__getitem__,
             )
-        overview = st.columns(4)
-        overview[0].metric("Reports", len(filtered))
-        overview[1].metric(
-            "Computed", sum(item.get("status") != "insufficient_data" for item in filtered)
-        )
-        overview[2].metric(
-            "Lookahead pass", sum(item.get("lookahead_status") == "pass" for item in filtered)
-        )
-        overview[3].metric("FDR 5%", sum(row["fdr_5pct"] is True for row in summary_rows))
-        with st.expander("因子比较表", expanded=False):
-            st.dataframe(
-                pd.DataFrame(summary_rows), use_container_width=True, hide_index=True
-            )
-        labels = [
-            f"{scope(item)[0]} · {scope(item)[1]} · {item.get('factor_name')}"
-            for item in filtered
-        ]
-        choice = st.selectbox("选择报告", range(len(labels)), format_func=labels.__getitem__)
-        render_single_report(filtered[choice])
+            render_panel_report(panel_reports[choice])
 
-elif page == "截面因子":
-    st.header("Panel Factors")
-    panel_reports = load_reports(REPORT_ROOT / "panel_factor")
-    if not panel_reports:
-        st.info("尚无截面报告。至少准备 3 个同频率币种后运行研究入口。")
-    else:
-        panel_rows = [
-            {
-                "factor": item.get("factor_name"),
-                "interval": item.get("interval"),
-                "status": item.get("status"),
-                **item.get("metrics", {}),
-                "lookahead": item.get("lookahead_status"),
-            }
-            for item in panel_reports
-        ]
-        st.dataframe(pd.DataFrame(panel_rows), use_container_width=True, hide_index=True)
-        labels = [
-            f"{item.get('interval')} · {item.get('factor_name')}" for item in panel_reports
-        ]
-        choice = st.selectbox(
-            "Panel factor report",
-            range(len(labels)),
-            format_func=labels.__getitem__,
-        )
-        render_panel_report(panel_reports[choice])
+    with cross_tab:
+        st.subheader("跨资产 / 跨频率")
+        st.caption("检查因子换一个币种或时间频率后，方向和表现是否仍然一致。")
+        cross_rows = load_summary().get("cross_frequency", [])
+        cross_frame = pd.DataFrame(cross_rows)
+        if cross_frame.empty:
+            st.info("重新运行研究脚本后，将生成跨资产/跨频率稳定性汇总。")
+        else:
+            st.caption("方向一致性只用于筛选稳定候选，不代表完成独立 OOS。")
+            st.dataframe(cross_frame, use_container_width=True, hide_index=True)
+            chart = cross_frame.dropna(subset=["median_rank_ic"]).set_index("factor_name")
+            if not chart.empty:
+                st.bar_chart(chart["median_rank_ic"])
 
-elif page == "跨口径稳健性":
-    st.header("跨资产 / 跨频率")
-    cross_rows = load_summary().get("cross_frequency", [])
-    cross_frame = pd.DataFrame(cross_rows)
-    if cross_frame.empty:
-        st.info("重新运行研究脚本后，将生成跨资产/跨频率稳定性汇总。")
-    else:
-        st.subheader("跨口径稳定性概览")
-        st.caption("方向一致性只用于筛选稳定候选，不代表完成独立 OOS。")
-        st.dataframe(cross_frame, use_container_width=True, hide_index=True)
-        chart = cross_frame.dropna(subset=["median_rank_ic"]).set_index("factor_name")
-        if not chart.empty:
-            st.bar_chart(chart["median_rank_ic"])
-
-elif page == "时序策略":
-    st.header("Single-Asset Strategy Builder")
+elif page == "策略研究" and strategy_view == "单币种择时":
+    st.subheader("单币种择时")
     st.caption("1 选择数据 → 2 组合因子 → 3 设置区间 → 4 运行回测 → 5 查看验证。")
     catalog = load_json(REPORT_ROOT / "data_catalog.json")
     health = load_data_health(str(catalog.get("generated_at") or "missing"))
@@ -1395,11 +1629,11 @@ elif page == "时序策略":
                     interval=ts_interval,
                 )
 
-elif page == "策略比较":
+elif page == "策略研究" and strategy_view == "结果比较":
     render_saved_strategy_comparison()
 
-elif page == "多因子回测":
-    st.header("Cross-Sectional Strategy Builder")
+elif page == "策略研究" and strategy_view == "多币种选币":
+    st.subheader("多币种选币")
     st.caption("1 选择同频率币种 → 2 选择截面因子 → 3 设置持仓与成本 → 4 回测。")
     catalog = load_json(REPORT_ROOT / "data_catalog.json")
     entries = list(catalog.get("entries", []))
@@ -1555,23 +1789,48 @@ elif page == "多因子回测":
 elif page == "数据中心":
     st.header("数据中心")
     st.caption("先处理 P0 缺口，再决定是否刷新近端行情或补充衍生品特征。")
+    report_health = load_report_health()
+    if report_health["status"] == "ok":
+        st.success(
+            f"报告生成完整：当前汇总引用 {report_health['valid']} 个有效报告，"
+            f"覆盖 {report_health.get('generated_scope_count', 0)} 个数据口径。"
+        )
+    else:
+        st.warning(
+            f"报告状态：{report_health['status']}，"
+            f"有效 {report_health.get('valid', 0)}/{report_health.get('referenced', 0)}。"
+        )
+        if report_health.get("errors"):
+            st.dataframe(pd.DataFrame(report_health["errors"]), hide_index=True)
     render_data_center()
 
 elif page == "机器学习":
-    st.header("ML Factor Mining")
+    st.header("机器学习训练")
     st.caption(
-        "训练折内自动筛选、去相关和标准化；测试折只用于严格样本外评估。"
+        "Ridge、Elastic Net、Robust Ridge 与浅层树在训练折内拟合；测试折只用于样本外评估。"
     )
+    training_status = load_json(REPORT_ROOT / "training_status.json")
+    if training_status:
+        status_columns = st.columns(3)
+        status_columns[0].metric("训练周期状态", training_status.get("status", "unknown"))
+        status_columns[1].metric("当前阶段", training_status.get("stage", "unknown"))
+        status_columns[2].metric(
+            "最近完成结果",
+            training_status.get("ml_result_count", 0),
+        )
+        if training_status.get("error"):
+            st.error(str(training_status["error"]))
     catalog = load_json(REPORT_ROOT / "data_catalog.json")
     ml_entries = list(catalog.get("entries", []))
     if not ml_entries:
         st.warning("尚无可识别的 Silver 数据，请先到数据中心扫描或刷新。")
     else:
         ml_health = load_data_health(str(catalog.get("generated_at") or "missing"))
+        readiness_report = build_training_readiness_report(ml_health)
         eligible_scopes = {
             (str(entry["symbol"]), str(entry["interval"]))
-            for entry in ml_health["datasets"]
-            if entry["ml_eligible"]
+            for entry in readiness_report["scopes"]
+            if entry["status"] == "ready"
         }
         available_scopes = sorted(
             {
@@ -1583,7 +1842,8 @@ elif page == "机器学习":
         )
         if not available_scopes:
             st.warning(
-                "当前没有达到 ML 门槛的数据集：需要至少 120 天历史且覆盖率不低于 98%。"
+                "当前没有达到 ML 门槛的数据集：固定切分需要至少 180 天历史"
+                "（120 天训练 + 30 天验证 + 30 天锁定 OOS），且覆盖率不低于 98%。"
             )
         else:
             scope_labels = [
@@ -1601,18 +1861,19 @@ elif page == "机器学习":
                 for entry in ml_health["datasets"]
                 if (entry["symbol"], entry["interval"]) == (ml_symbol, ml_interval)
             )
-            readiness = st.columns(3)
+            readiness = st.columns(4)
             readiness[0].metric("历史天数", f"{selected_health['history_days']:.0f}")
             readiness[1].metric("覆盖率", f"{selected_health['coverage_ratio']:.2%}")
             readiness[2].metric(
                 "行情状态", "新鲜" if selected_health["fresh"] else "历史样本"
             )
+            readiness[3].metric("模型", "4 + 等权集成")
             setting_columns = st.columns(4)
             ml_horizon = int(
                 setting_columns[0].number_input("预测周期", min_value=1, value=1)
             )
             ml_train_days = int(
-                setting_columns[1].number_input("最少训练天数", min_value=30, value=90)
+                setting_columns[1].number_input("最少训练天数", min_value=30, value=120)
             )
             ml_test_days = int(
                 setting_columns[2].number_input("每折测试天数", min_value=1, value=14)
@@ -1636,13 +1897,13 @@ elif page == "机器学习":
                             test_days=ml_test_days,
                             max_features=ml_max_features,
                         )
-                        status.write("汇总严格 OOS 预测、成本后回测和推荐稳定性。")
+                        status.write("训练三个固定模型，汇总等权集成的严格 OOS 表现。")
                         status.update(
                             label="机器学习候选与 OOS 报告已生成。",
                             state="complete",
                             expanded=False,
                         )
-                    load_reports.clear()
+                    load_reports.clear()  # type: ignore[attr-defined]
                     st.success("机器学习筛选与严格样本外回测已完成。")
                 except (KeyError, OSError, RuntimeError, ValueError) as exc:
                     st.error(str(exc))
@@ -1652,12 +1913,23 @@ elif page == "机器学习":
         st.info("尚无 ML 报告，可在上方选择数据后运行。")
     else:
         labels = [
-            f"{scope(item)[0]} · {scope(item)[1]} · Ridge composite"
+            f"{scope(item)[0]} · {scope(item)[1]} · {item.get('factor_name', 'ML ensemble')}"
             for item in ml_reports
         ]
         choice = st.selectbox("ML 报告", range(len(labels)), format_func=labels.__getitem__)
         selected_ml = ml_reports[choice]
         render_single_report(selected_ml)
+        st.subheader("模型横向比较")
+        model_comparison = selected_ml.get("model_comparison", {})
+        if not model_comparison:
+            st.info("旧报告没有多模型比较，请重新运行训练。")
+        else:
+            comparison_rows = [
+                {"model": model, **result.get("metrics", {})}
+                for model, result in model_comparison.items()
+            ]
+            st.dataframe(pd.DataFrame(comparison_rows), use_container_width=True, hide_index=True)
+            st.caption("模型不会根据测试期收益动态挑选；ensemble 使用预先固定的等权组合。")
         st.subheader("模型推荐特征")
         recommendations = pd.DataFrame(
             selected_ml.get("feature_recommendations", [])
@@ -1670,7 +1942,7 @@ elif page == "机器学习":
                 "推荐分数仅来自训练折的入选频率、权重和方向稳定性，"
                 "不会读取测试折收益。"
             )
-            if st.button("用前 5 个推荐因子创建时序策略"):
+            if st.button("用前 5 个推荐因子创建单币种策略"):
                 preset = build_ml_strategy_preset(
                     selected_ml.get("feature_recommendations", []), top_n=5
                 )

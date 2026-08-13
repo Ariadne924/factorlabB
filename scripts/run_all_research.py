@@ -17,6 +17,7 @@ import factors  # noqa: E402,F401 — 注册正式因子
 from data.gold import write_gold_factor  # noqa: E402
 from data.health import build_data_health_report  # noqa: E402
 from data.silver import silver_to_factor_input  # noqa: E402
+from data.training_readiness import build_training_readiness_report  # noqa: E402
 from data.validator import DataValidator  # noqa: E402
 from evaluation.correlation import correlation_matrix  # noqa: E402
 from evaluation.cross_frequency import (  # noqa: E402
@@ -24,10 +25,20 @@ from evaluation.cross_frequency import (  # noqa: E402
     display_frequency,
 )
 from evaluation.forward_check import ForwardCheck  # noqa: E402
+from evaluation.research_runtime import (  # noqa: E402
+    ResearchProgress,
+    cached_report_paths,
+    load_research_cache,
+    research_code_fingerprint,
+    research_run_signature,
+    scope_signature,
+    write_json_atomic,
+)
 from evaluation.robustness import benjamini_hochberg, forward_return, trailing_window  # noqa: E402
 from factors.registry import compute_factor, get_factor_metadata, list_factors  # noqa: E402
 from scripts.run_panel_research import run as run_panel_research  # noqa: E402
 from visualization.frontend_payload import write_frontend_payload  # noqa: E402
+from visualization.report_health import inspect_report_generation  # noqa: E402
 from visualization.single_factor_report import (  # noqa: E402
     build_single_factor_report_data,
     insufficient_report,
@@ -42,7 +53,29 @@ def _portable_path(path: Path, base: Path) -> str:
         return str(path.resolve())
 
 
-def run(
+def summarize_lookahead(rows: list[dict[str, Any]]) -> dict[str, int | str]:
+    """区分明确失败与因数据依赖不足而未运行的检查。"""
+    passed = sum(row["status"] == "pass" for row in rows)
+    failed = sum(row["status"] == "fail" for row in rows)
+    not_run = sum(row["status"] == "not_run" for row in rows)
+    if failed:
+        status = "fail"
+    elif passed and not_run:
+        status = "partial"
+    elif passed:
+        status = "pass"
+    else:
+        status = "not_run"
+    return {
+        "status": status,
+        "checked_count": len(rows),
+        "passed_count": passed,
+        "failed_count": failed,
+        "not_run_count": not_run,
+    }
+
+
+def _run(
     data_dir: Path,
     reports_dir: Path,
     *,
@@ -52,10 +85,12 @@ def run(
     bootstrap_samples: int = 500,
     symbols: tuple[str, ...] | None = None,
     intervals: tuple[str, ...] | None = None,
+    use_cache: bool = True,
 ) -> dict[str, object]:
     report_dir = reports_dir / "single_factor"
     report_dir.mkdir(parents=True, exist_ok=True)
-    silver_files = sorted(data_dir.glob("silver/**/klines.parquet"))
+    all_silver_files = sorted(data_dir.glob("silver/**/klines.parquet"))
+    silver_files = list(all_silver_files)
     symbol_filter = {value.upper() for value in symbols or ()}
     interval_filter = {"1d" if value == "24h" else value for value in intervals or ()}
     if symbol_filter or interval_filter:
@@ -68,11 +103,44 @@ def run(
                 continue
             selected_files.append(path)
         silver_files = selected_files
+    factor_names = list_factors()
     report_paths: list[str] = []
+    cache_path = reports_dir / "research_cache.json"
+    cache = load_research_cache(cache_path)
+    status_path = reports_dir / "research_status.json"
+    progress = ResearchProgress(
+        status_path,
+        total_scopes=len(silver_files),
+        factors_per_scope=len(factor_names),
+    )
+    settings: dict[str, Any] = {
+        "lookback_days": lookback_days,
+        "robustness_windows": list(robustness_windows),
+        "horizons": list(horizons),
+        "bootstrap_samples": bootstrap_samples,
+        "factors": factor_names,
+    }
+    code_fingerprint = research_code_fingerprint(PROJECT_ROOT)
+    scope_signatures = {
+        f"{path.parts[-3]}_{path.parts[-2]}": scope_signature(
+            path,
+            settings=settings,
+            code_fingerprint=code_fingerprint,
+        )
+        for path in silver_files
+    }
+    run_signature = research_run_signature(
+        scope_signatures,
+        context={
+            "settings": settings,
+            "symbols": sorted(symbol_filter),
+            "intervals": sorted(interval_filter),
+        },
+    )
     manifest: dict[str, object] = {
         "status": "ok" if silver_files else "insufficient_data",
         "silver_files": [_portable_path(path, PROJECT_ROOT) for path in silver_files],
-        "factor_count": len(list_factors()),
+        "factor_count": len(factor_names),
         "research_settings": {
             "lookback_days": lookback_days,
             "robustness_windows": list(robustness_windows),
@@ -85,8 +153,45 @@ def run(
         "oos_6_months_completed": False,
         "note": "不生成合成样本；短样本指标不得表述为已验证 alpha。",
     }
+    last_run = cache.get("last_run", {})
+    snapshot_paths = [
+        reports_dir / "research_manifest.json",
+        reports_dir / "research_summary.json",
+        reports_dir / "report_health.json",
+    ]
+    cache_reports_exist = all(
+        cached_report_paths(
+            cache,
+            scope=scope,
+            signature=signature,
+            reports_dir=reports_dir,
+        )
+        is not None
+        for scope, signature in scope_signatures.items()
+    )
+    if (
+        use_cache
+        and silver_files
+        and last_run.get("signature") == run_signature
+        and all(path.is_file() for path in snapshot_paths)
+        and cache_reports_exist
+    ):
+        manifest = json.loads(snapshot_paths[0].read_text(encoding="utf-8"))
+        manifest["research_cache"] = {
+            "enabled": True,
+            "snapshot_hit": True,
+            "cache_hit_scopes": len(silver_files),
+            "cache_hit_tasks": len(silver_files) * len(factor_names),
+        }
+        snapshot_paths[0].write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        for _ in silver_files:
+            progress.complete_scope(cache_hit=True, task_count=len(factor_names))
+        progress.complete()
+        return manifest
     if not silver_files:
-        for factor_name in list_factors():
+        for factor_name in factor_names:
             output = report_dir / f"{factor_name}.json"
             write_report_data(
                 insufficient_report(
@@ -107,8 +212,42 @@ def run(
             encoding="utf-8",
         )
     completed_reports: list[tuple[Path, dict[str, Any]]] = []
-    factor_frames: dict[str, pd.DataFrame] = {}
+    cached_correlation_reports: list[dict[str, Any]] = []
+    computed_correlation_reports: list[dict[str, Any]] = []
     for silver_path in silver_files:
+        scope_parts = silver_path.parts
+        scope_name = f"{scope_parts[-3]}_{scope_parts[-2]}"
+        progress.start_scope(scope_name)
+        signature = scope_signatures[scope_name]
+        cached_paths = (
+            cached_report_paths(
+                cache,
+                scope=scope_name,
+                signature=signature,
+                reports_dir=reports_dir,
+            )
+            if use_cache
+            else None
+        )
+        if cached_paths is not None:
+            try:
+                cached_reports = [
+                    json.loads(path.read_text(encoding="utf-8")) for path in cached_paths
+                ]
+            except (OSError, json.JSONDecodeError):
+                cached_paths = None
+            else:
+                completed_reports.extend(zip(cached_paths, cached_reports, strict=True))
+                report_paths.extend(
+                    path.relative_to(reports_dir).as_posix() for path in cached_paths
+                )
+                cached_correlation = cache["scopes"][scope_name].get("correlation_report")
+                if cached_correlation and (reports_dir / cached_correlation).is_file():
+                    cached_correlation_reports.append(
+                        {"scope": scope_name, "path": cached_correlation}
+                    )
+                progress.complete_scope(cache_hit=True, task_count=len(factor_names))
+                continue
         silver = pd.read_parquet(silver_path)
         DataValidator.validate_klines(silver)
         interval = str(silver["interval"].iloc[0])
@@ -122,7 +261,8 @@ def run(
         report_frame = frame.loc[factor_input]
         factor_columns: dict[str, pd.Series] = {}
         forward_returns = forward_return(frame["close"], 1).reindex(report_frame.index)
-        for factor_name in list_factors():
+        scope_report_paths: list[str] = []
+        for factor_name in factor_names:
             output = report_dir / f"{symbol}_{interval}_{factor_name}.json"
             report: dict[str, Any]
             try:
@@ -161,9 +301,29 @@ def run(
                 report["interval"] = interval
                 report["display_frequency"] = display_frequency(interval)
             completed_reports.append((output, report))
-            report_paths.append(str(output.relative_to(reports_dir)))
+            relative_output = output.relative_to(reports_dir).as_posix()
+            report_paths.append(relative_output)
+            scope_report_paths.append(relative_output)
+            progress.advance(factor=factor_name)
         if factor_columns:
-            factor_frames[f"{symbol}_{interval}"] = pd.DataFrame(factor_columns)
+            matrix = correlation_matrix(pd.DataFrame(factor_columns))
+            correlation_path = reports_dir / f"factor_correlation_{scope_name}.json"
+            correlation_path.write_text(
+                matrix.to_json(orient="split", force_ascii=False), encoding="utf-8"
+            )
+            correlation_relative = correlation_path.relative_to(reports_dir).as_posix()
+            computed_correlation_reports.append(
+                {"scope": scope_name, "path": correlation_relative}
+            )
+        cache["scopes"][scope_name] = {
+            "signature": signature,
+            "reports": scope_report_paths,
+            "correlation_report": (
+                correlation_relative if factor_columns else None
+            ),
+        }
+        write_json_atomic(cache_path, cache)
+        progress.complete_scope(cache_hit=False)
     p_values = pd.Series(
         {
             str(path): report.get("robustness", {})
@@ -203,16 +363,7 @@ def run(
             }
         )
     cross_frequency = build_cross_frequency_summary(summary_rows)
-    correlation_reports: list[dict[str, Any]] = []
-    for scope_name, values in factor_frames.items():
-        matrix = correlation_matrix(values)
-        correlation_path = reports_dir / f"factor_correlation_{scope_name}.json"
-        correlation_path.write_text(
-            matrix.to_json(orient="split", force_ascii=False), encoding="utf-8"
-        )
-        correlation_reports.append(
-            {"scope": scope_name, "path": correlation_path.relative_to(reports_dir).as_posix()}
-        )
+    correlation_reports = cached_correlation_reports + computed_correlation_reports
     lookahead_rows = [
         {
             "factor_name": row["factor_name"],
@@ -224,12 +375,7 @@ def run(
         for row in summary_rows
     ]
     lookahead_report = {
-        "status": (
-            "pass" if lookahead_rows and all(row["status"] == "pass" for row in lookahead_rows)
-            else "not_run" if not lookahead_rows else "fail"
-        ),
-        "checked_count": len(lookahead_rows),
-        "failed_count": sum(row["status"] != "pass" for row in lookahead_rows),
+        **summarize_lookahead(lookahead_rows),
         "results": lookahead_rows,
     }
     lookahead_path = reports_dir / "lookahead_report.json"
@@ -287,11 +433,74 @@ def run(
         )
         summary["data_health"] = "data_health.json"
         summary["data_health_summary"] = health["summary"]
+        readiness = build_training_readiness_report(
+            health, output=reports_dir / "training_readiness.json"
+        )
+        summary["training_readiness"] = "training_readiness.json"
+        summary["training_readiness_summary"] = readiness["summary"]
     summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     write_frontend_payload(summary, reports_dir / "frontend_payload.json")
+    report_health = inspect_report_generation(reports_dir)
+    report_health_path = reports_dir / "report_health.json"
+    report_health_path.write_text(
+        json.dumps(report_health, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    manifest["report_health"] = report_health
+    manifest["research_cache"] = {
+        "enabled": use_cache,
+        "snapshot_hit": False,
+        "cache_hit_scopes": progress.state["cache_hit_scopes"],
+        "cache_hit_tasks": progress.state["cache_hit_tasks"],
+    }
+    cache["last_run"] = {"signature": run_signature}
+    write_json_atomic(cache_path, cache)
     manifest_path = reports_dir / "research_manifest.json"
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    progress.complete()
     return manifest
+
+
+def run(
+    data_dir: Path,
+    reports_dir: Path,
+    *,
+    lookback_days: int = 180,
+    robustness_windows: tuple[int, ...] = (30, 60, 90, 180),
+    horizons: tuple[int, ...] = (1, 3, 6, 12, 24),
+    bootstrap_samples: int = 500,
+    symbols: tuple[str, ...] | None = None,
+    intervals: tuple[str, ...] | None = None,
+    use_cache: bool = True,
+) -> dict[str, object]:
+    """运行离线研究；失败时保留可诊断状态。"""
+    try:
+        return _run(
+            data_dir,
+            reports_dir,
+            lookback_days=lookback_days,
+            robustness_windows=robustness_windows,
+            horizons=horizons,
+            bootstrap_samples=bootstrap_samples,
+            symbols=symbols,
+            intervals=intervals,
+            use_cache=use_cache,
+        )
+    except Exception as exc:
+        status_path = reports_dir / "research_status.json"
+        if status_path.exists():
+            try:
+                status = json.loads(status_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                status = {}
+            status.update(
+                {
+                    "status": "failed",
+                    "failed_at": pd.Timestamp.now(tz="UTC").isoformat(),
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+            )
+            write_json_atomic(status_path, status)
+        raise
 
 
 def main() -> int:
@@ -304,6 +513,7 @@ def main() -> int:
     parser.add_argument("--bootstrap-samples", type=int, default=500)
     parser.add_argument("--symbols", nargs="+", help="只研究指定资产")
     parser.add_argument("--intervals", nargs="+", help="只研究指定频率，24h 等价于 1d")
+    parser.add_argument("--no-cache", action="store_true", help="忽略已有研究缓存并重新计算")
     args = parser.parse_args()
     manifest = run(
         args.data_dir,
@@ -314,6 +524,7 @@ def main() -> int:
         bootstrap_samples=args.bootstrap_samples,
         symbols=tuple(args.symbols) if args.symbols else None,
         intervals=tuple(args.intervals) if args.intervals else None,
+        use_cache=not args.no_cache,
     )
     print(json.dumps(manifest, ensure_ascii=False, indent=2))
     return 0

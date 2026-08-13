@@ -51,7 +51,23 @@ def test_workflow_requires_validation_after_strategy_result() -> None:
     )
     assert next_workflow_action(steps)["key"] == "validation"
     assert next_workflow_action(steps)["state"] == "ready"
+    assert next_workflow_action(steps)["action_page"] == "策略研究"
     assert workflow_progress(steps) == 2 / 3
+
+
+def test_workflow_links_only_to_current_navigation_pages() -> None:
+    steps = build_workflow_steps(
+        health_report(covered=30, ready=30, gaps=0),
+        factor_report_count=18,
+        has_strategy_result=False,
+        has_robustness_result=False,
+        has_walk_forward_result=False,
+    )
+    assert {step["action_page"] for step in steps} == {
+        "数据中心",
+        "因子检验",
+        "策略研究",
+    }
 
 
 def test_workflow_completion_does_not_depend_on_optional_factor_step() -> None:

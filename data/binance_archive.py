@@ -19,6 +19,13 @@ from data.paths import normalize_path_segment, safe_data_path
 from data.schema import KlineRaw, bronze_to_silver, raw_to_dataframe
 
 
+def _task_int(task: dict[str, object], field: str) -> int:
+    value = task[field]
+    if not isinstance(value, (str, int)):
+        raise TypeError(f"task field {field!r} must be a string or integer")
+    return int(value)
+
+
 class BinanceArchiveDownloader:
     """下载月度官方 ZIP，校验 SHA256 后幂等写入 Bronze。"""
 
@@ -283,7 +290,7 @@ class BinanceArchiveDownloader:
         downloaded: list[tuple[dict[str, object], pd.DataFrame, bool]] = []
         errors: list[dict[str, object]] = []
         for task in tasks:
-            year, month = int(task["year"]), int(task["month"])
+            year, month = _task_int(task, "year"), _task_int(task, "month")
             relative = self.monthly_relative_path(
                 symbol=symbol,
                 interval=interval,
@@ -312,8 +319,8 @@ class BinanceArchiveDownloader:
                 symbol=symbol,
                 interval=interval,
                 market=market,
-                year=int(task["year"]),
-                month=int(task["month"]),
+                year=_task_int(task, "year"),
+                month=_task_int(task, "month"),
                 bronze_path=bronze_path,
                 silver_path=silver_path,
                 cache_hit=cache_hit,

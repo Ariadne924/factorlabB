@@ -19,7 +19,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--symbols",
         nargs="+",
-        default=["BTCUSDT", "ETHUSDT", "SOLUSDT"],
+        default=[
+            "BTCUSDT",
+            "ETHUSDT",
+            "SOLUSDT",
+            "BNBUSDT",
+            "XRPUSDT",
+            "DOGEUSDT",
+        ],
     )
     parser.add_argument("--intervals", nargs="+", default=["1m", "5m", "1h"])
     parser.add_argument("--lookback-hours", type=int, default=24)

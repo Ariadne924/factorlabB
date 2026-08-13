@@ -5,9 +5,14 @@ from pathlib import Path
 
 from scripts.incremental_update import main as incremental_main
 from scripts.run_all import main as run_all_main
+from scripts.run_platform import restart_delay
 
 
 class ScriptExitTests(unittest.TestCase):
+    def test_platform_restart_delay_is_capped(self) -> None:
+        self.assertEqual(restart_delay(1), 1)
+        self.assertEqual(restart_delay(10), 30)
+
     def test_run_all_calls_real_research_entry(self) -> None:
         called: list[tuple[Path, Path]] = []
 

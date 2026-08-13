@@ -41,3 +41,14 @@ def test_websocket_reconnects_and_continues_stream() -> None:
     assert next(iterator) == {"event": "ok"}
     stream.close()
     assert sleeps == [0.1]
+
+
+def test_websocket_preserves_case_sensitive_event_names() -> None:
+    stream = BinanceWebSocketStream(
+        "BTCUSDT@aggTrade/BTCUSDT@bookTicker/BTCUSDT@markPrice@1s",
+        base_url="wss://fstream.binance.com/stream?streams=",
+    )
+    assert stream.url == (
+        "wss://fstream.binance.com/stream?streams="
+        "btcusdt@aggTrade/btcusdt@bookTicker/btcusdt@markPrice@1s"
+    )

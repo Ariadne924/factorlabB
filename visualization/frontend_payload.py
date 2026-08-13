@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-FRONTEND_CONTRACT_VERSION = "1.2"
+FRONTEND_CONTRACT_VERSION = "1.3"
 
 
 def build_frontend_payload(summary: dict[str, Any]) -> dict[str, Any]:
@@ -51,6 +51,11 @@ def build_frontend_payload(summary: dict[str, Any]) -> dict[str, Any]:
             "path": summary.get("data_health"),
             "summary": summary.get("data_health_summary", {}),
         },
+        "training_readiness": {
+            "path": summary.get("training_readiness"),
+            "summary": summary.get("training_readiness_summary", {}),
+        },
+        "factor_grades": summary.get("factor_grades", "factor_grades/latest.json"),
         "cross_frequency": list(summary.get("cross_frequency", [])),
     }
 

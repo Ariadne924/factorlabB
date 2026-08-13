@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from factors.registry import list_factors
-from scripts.run_all_research import run
+from scripts.run_all_research import run, summarize_lookahead
 from visualization.single_factor_report import build_single_factor_report_data, write_report_data
 
 
@@ -55,3 +55,23 @@ def test_research_entry_is_honest_without_data(tmp_path) -> None:
     assert summary["fdr_5pct_pass_count"] == 0
     lookahead = json.loads((tmp_path / "reports" / "lookahead_report.json").read_text("utf-8"))
     assert lookahead["status"] == "not_run"
+    assert lookahead["failed_count"] == 0
+    assert lookahead["not_run_count"] == 0
+    status = json.loads((tmp_path / "reports" / "research_status.json").read_text("utf-8"))
+    assert status["status"] == "completed"
+    assert status["progress"] == 1.0
+
+
+def test_lookahead_summary_does_not_treat_not_run_as_failure() -> None:
+    partial = summarize_lookahead([{"status": "pass"}, {"status": "not_run"}])
+    failed = summarize_lookahead([{"status": "pass"}, {"status": "fail"}])
+
+    assert partial == {
+        "status": "partial",
+        "checked_count": 2,
+        "passed_count": 1,
+        "failed_count": 0,
+        "not_run_count": 1,
+    }
+    assert failed["status"] == "fail"
+    assert failed["failed_count"] == 1

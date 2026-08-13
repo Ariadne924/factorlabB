@@ -66,6 +66,9 @@ pytest -q
 # 离线运行全部已注册因子的研究与报告（只读取已有 Silver 数据）
 python scripts/run_all_research.py
 
+# 默认复用数据、参数和研究源码均未变化的资产×频率报告；需要强制重算时关闭缓存
+python scripts/run_all_research.py --no-cache
+
 # 查看真实数据下载计划（不联网、不写行情文件）
 python scripts/download_research_data.py
 
@@ -97,11 +100,26 @@ python scripts/run_all_research.py --lookback-days 90 --robustness-windows 30 60
 # 严格 walk-forward 的机器学习复合因子（自动生成参数变体并在训练折筛选）
 python scripts/run_ml_factor_mining.py --symbols BTCUSDT ETHUSDT --intervals 1m 5m 15m 1h 6h 24h
 
+# 完整研究周期：数据资格 → 因子研究 → 多模型 Walk-Forward → 因子分级轮动
+python scripts/run_research_cycle.py --symbols BTCUSDT ETHUSDT --intervals 1h 6h 24h
+
+# 只更新全部保留因子的 A/B/C/D 研究优先级
+python scripts/grade_factors.py --rotation-days 7
+
 # 至少三个同频率币种的截面研究
 python scripts/run_panel_research.py --symbols BTCUSDT ETHUSDT SOLUSDT --intervals 1h 6h 24h
 
 # 启动 Factor Explorer / Single Factor Report
 streamlit run visualization/app.py
+
+# 另开一个终端启动公共实时行情（无需 API Key），前端进入“实时行情”
+python scripts/run_live_market.py
+
+# 长期运行入口：同时维护实时采集与前端，子进程退出后自动退避重启
+python scripts/run_platform.py
+
+# 独立检查当前研究汇总引用的报告是否完整
+python scripts/check_reports.py
 
 # 可选：刷新 BTC/ETH/SOL 的 1m/5m/1h 最近24小时（也可在 Data Center 点击刷新）
 python scripts/refresh_recent_data.py
@@ -176,16 +194,20 @@ crypto-factor-lab/
 - 独立 panel registry 已接入 25 个 Alpha101 公式与 CTREND 论文描述的 28 个技术输入；保留来源、依赖、哈希和适配说明，它们是待检验候选，不是已验证 alpha。
 - `reports/data_catalog.json` 记录 Silver 覆盖与内部缺口；下载脚本只规划缺失范围，完整覆盖时返回 `up_to_date`。
 - 截面研究输出同一时点 IC/RankIC、滚动 IC、IC decay、分组收益、换手率、成本敏感性、FDR 和前视检查；少于 3 个币种时明确返回 `insufficient_data`。
-- Streamlit 使用侧边栏任务入口，区分单资产时序策略与多资产截面策略。两类工作台均支持币种/频率/区间、多个因子、权重与方向、调仓和成本；ML 训练折推荐可以一键生成时序策略候选预设。
-- 首页使用数据、策略和验证产物动态生成流程完成度与下一步建议；因子研究可后置，不再阻塞用户直接使用正式 registry 构建策略。数据中心将缺频率、K 线缺口、行情陈旧和衍生品缺失整理为 P0/P1 任务队列，具体交互口径见 `docs/FRONTEND_WORKFLOW.md`。
-- 时序策略包含成本重定价、分月/滚动表现、Buy & Hold、参数邻域检查、因果市场状态归因，以及训练期选参后冻结参数的策略 Walk-Forward；还支持显式保存和横向比较策略快照，保存结果默认留在本地报告目录。
+- Streamlit 左侧使用 6 个任务入口；新增“实时行情”，并由独立进程更新逐笔成交、盘口、当前 K 线、Funding 与 Basis 秒级快照。“策略研究”统一承载单币种择时、多币种选币和结果比较。两类策略均支持币种/频率/区间、多个因子、权重与方向、调仓和成本；ML 训练折推荐可以一键生成单币种策略候选预设。
+- 首页使用数据、策略和验证产物动态生成流程完成度与下一步建议；“因子检验”统一展示单资产、截面和跨口径结果，并可后置，不再阻塞用户直接使用正式 registry 构建策略。数据中心将缺频率、K 线缺口、行情陈旧和衍生品缺失整理为 P0/P1 任务队列，具体交互口径见 `docs/FRONTEND_WORKFLOW.md`。
+- 单币种择时包含成本重定价、分月/滚动表现、Buy & Hold、参数邻域检查、因果市场状态归因，以及训练期选参后冻结参数的策略 Walk-Forward；还支持显式保存和横向比较策略快照，保存结果默认留在本地报告目录。
 - Data Center 每 30 秒读取本地覆盖目录，并提供用户主动触发的短窗口 REST 刷新；重复数据按时间键合并。该功能是近实时 K 线刷新，不冒充逐笔流式存储。
 - Data Center 区分“历史可研究”“行情新鲜”“ML 候选”三类状态，并展示核心 6 币种 × 5 频率覆盖、内部缺口及 Funding/OI/Basis 新鲜度；机器学习入口只列出至少 120 天且覆盖率不低于 98% 的数据集。
 - 默认研究样本收窄至末端 180 个自然日，并报告 30/60/90/180 天 × 1/3/6/12/24 根 K 线的 IC 稳健性网格、区块 bootstrap、符号一致性、分组单调性和 BH-FDR。
 - Binance REST：K 线、逐笔聚合成交、盘口快照、资金费率、持仓量、当前基差；429/5xx 与网络错误采用有限退避重试。
 - Binance 官方公开归档：支持月度现货/USD-M 永续 K 线 ZIP、SHA256 校验、微秒时间戳兼容及 Bronze/Silver 幂等导入。
 - OKX 最小公共 REST 客户端：统一接入现货 K 线、成交、盘口与永续资金费率；不冒充完整生产级连接器。
-- Binance WebSocket：基础同步消息流、自动重连和指数退避；不提供 exactly-once、持久化队列或完整生产级心跳状态机。
+- Binance WebSocket：公共 USD-M combined stream、独立采集进程、原子前端快照、已收盘 K 线幂等落盘、自动重连和指数退避；不提供 exactly-once、持久化队列或自动下单。详见 `docs/REALTIME_MARKET.md`。
+- 实时页面包含分钟涨跌、点差、资金费率和数据陈旧四类市场异动提醒；提醒只用于研究观察，不触发下单。
+- `scripts/run_platform.py` 可同时守护采集器和 Streamlit，记录 PID、重启次数与更新时间到 `reports/service_status.json`。它是单机研究环境守护器，不替代 Docker/systemd/Kubernetes。
+- 研究入口会生成 `reports/report_health.json` 检查当前汇总引用是否完整；旧报告保留但不混入当前研究汇总。完整研究周期还会写入 `reports/training_status.json`，展示数据检查、因子研究、ML 和完成状态。
+- 全量因子研究默认启用两级缓存：先复用未变化的资产×频率报告，选择范围、数据、参数和研究源码全部一致时直接复用最终汇总快照；任何相关条件变化都会自动降级为对应口径重算。进度写入 `reports/research_status.json`，并在数据中心显示完成比例、当前因子与缓存命中数。使用 `--no-cache` 可强制重算。
 - 数据异常报告：极端价格跳变、stale/flat、零成交量、交易所时间缺口。
 - 单因子 JSON/HTML 报告与 Streamlit Factor Explorer；面板支持资产/频率/类别筛选、跨口径汇总和机器学习报告。
 - 研究入口额外生成版本化的 `reports/frontend_payload.json`，供下一阶段独立前端直接消费。

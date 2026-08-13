@@ -12,6 +12,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from data.catalog import build_data_catalog  # noqa: E402
 from data.health import build_data_health_report  # noqa: E402
+from data.training_readiness import build_training_readiness_report  # noqa: E402
 
 
 def main() -> int:
@@ -26,6 +27,12 @@ def main() -> int:
         output=args.reports_dir / "data_health.json",
         manifest_path=args.reports_dir / "real_data_collection_manifest.json",
     )
+    readiness = build_training_readiness_report(
+        report, output=args.reports_dir / "training_readiness.json"
+    )
+    report["summary"]["training_ready_datasets"] = readiness["summary"][
+        "ready_scope_count"
+    ]
     print(json.dumps(report["summary"], ensure_ascii=False, indent=2))
     return 0 if not report["errors"] else 1
 

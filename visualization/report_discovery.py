@@ -41,3 +41,31 @@ def load_factor_reports(
         report["_file"] = path.name
         reports.append(report)
     return reports
+
+
+def load_single_factor_index(summary_path: Path, report_directory: Path) -> list[dict[str, Any]]:
+    """从轻量研究汇总建立单因子索引，避免启动时加载数百 MB 明细。"""
+    if not summary_path.exists():
+        return load_factor_reports(report_directory, require_symbol=True)
+    raw = json.loads(summary_path.read_text(encoding="utf-8"))
+    results = raw.get("results", []) if isinstance(raw, dict) else []
+    reports: list[dict[str, Any]] = []
+    for item in results:
+        if not isinstance(item, dict) or not item.get("factor_name"):
+            continue
+        relative = Path(str(item.get("report", "")))
+        filename = relative.name
+        if not filename or not (report_directory / filename).exists():
+            continue
+        report = dict(item)
+        report["_file"] = filename
+        report.setdefault(
+            "provenance",
+            {"category": item.get("category"), "source": item.get("source")},
+        )
+        report.setdefault(
+            "robustness",
+            {"multiple_testing": item.get("multiple_testing", {})},
+        )
+        reports.append(report)
+    return reports

@@ -3,10 +3,23 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypedDict
 
 import numpy as np
 import pandas as pd
+
+
+class _RecommendationBucket(TypedDict):
+    weights: list[float]
+    screening_scores: list[float]
+    selected_folds: int
+
+
+class _TreeStump(TypedDict):
+    feature_index: int
+    threshold: float
+    left_value: float
+    right_value: float
 
 
 @dataclass(frozen=True)
@@ -42,6 +55,158 @@ def _fit_ridge(x: np.ndarray, y: np.ndarray, alpha: float) -> np.ndarray:
     return np.linalg.pinv(x.T @ x + penalty) @ x.T @ y
 
 
+def _soft_threshold(value: float, penalty: float) -> float:
+    if value > penalty:
+        return value - penalty
+    if value < -penalty:
+        return value + penalty
+    return 0.0
+
+
+def _fit_elastic_net(
+    x: np.ndarray,
+    y: np.ndarray,
+    alpha: float,
+    *,
+    l1_ratio: float,
+    max_iter: int = 250,
+    tolerance: float = 1e-7,
+) -> np.ndarray:
+    """小型坐标下降实现，避免为基础模型引入额外运行依赖。"""
+    if not 0 <= l1_ratio <= 1:
+        raise ValueError("elastic_net_l1_ratio 必须在 [0, 1] 内")
+    n_rows, n_features = x.shape
+    weights = np.zeros(n_features, dtype=float)
+    regularization = alpha / max(1, n_rows)
+    column_energy = np.square(x).mean(axis=0)
+    for _ in range(max_iter):
+        previous = weights.copy()
+        for index in range(n_features):
+            residual = y - x @ weights + x[:, index] * weights[index]
+            correlation = float(np.dot(x[:, index], residual) / max(1, n_rows))
+            denominator = column_energy[index] + regularization * (1.0 - l1_ratio)
+            weights[index] = (
+                _soft_threshold(correlation, regularization * l1_ratio) / denominator
+                if denominator > 0
+                else 0.0
+            )
+        if float(np.max(np.abs(weights - previous), initial=0.0)) <= tolerance:
+            break
+    return weights
+
+
+def _fit_robust_ridge(
+    x: np.ndarray,
+    y: np.ndarray,
+    alpha: float,
+    *,
+    delta: float,
+    max_iter: int = 20,
+) -> np.ndarray:
+    """使用 Huber 权重的迭代 Ridge，降低数字资产极端收益的影响。"""
+    if delta <= 0:
+        raise ValueError("robust_delta 必须为正数")
+    weights = _fit_ridge(x, y, alpha)
+    for _ in range(max_iter):
+        residual = y - x @ weights
+        centered = residual - np.median(residual)
+        scale = float(np.median(np.abs(centered)) / 0.6745)
+        if not np.isfinite(scale) or scale <= 1e-12:
+            break
+        threshold = delta * scale
+        absolute = np.abs(residual)
+        sample_weights = np.ones_like(absolute)
+        tail = absolute > threshold
+        sample_weights[tail] = threshold / absolute[tail]
+        root = np.sqrt(sample_weights)
+        updated = _fit_ridge(x * root[:, None], y * root, alpha)
+        if float(np.max(np.abs(updated - weights), initial=0.0)) <= 1e-7:
+            weights = updated
+            break
+        weights = updated
+    return weights
+
+
+def _fit_tree_stumps(
+    x: np.ndarray,
+    y: np.ndarray,
+    *,
+    n_estimators: int = 8,
+    learning_rate: float = 0.1,
+) -> list[_TreeStump]:
+    """确定性的梯度提升决策树桩，作为无额外依赖的简单非线性基线。"""
+    if n_estimators < 1 or learning_rate <= 0:
+        raise ValueError("tree_n_estimators 和 tree_learning_rate 必须为正数")
+    predictions = np.zeros(len(y), dtype=float)
+    stumps: list[_TreeStump] = []
+    quantiles = (0.3, 0.5, 0.7)
+    for _ in range(n_estimators):
+        residual = y - predictions
+        best_loss = np.inf
+        best: _TreeStump | None = None
+        for feature_index in range(x.shape[1]):
+            feature = x[:, feature_index]
+            for threshold in np.unique(np.quantile(feature, quantiles)):
+                left = feature <= threshold
+                if not left.any() or left.all():
+                    continue
+                left_value = float(residual[left].mean())
+                right_value = float(residual[~left].mean())
+                update = np.where(left, left_value, right_value)
+                loss = float(np.mean(np.square(residual - learning_rate * update)))
+                if loss < best_loss:
+                    best_loss = loss
+                    best = {
+                        "feature_index": feature_index,
+                        "threshold": float(threshold),
+                        "left_value": learning_rate * left_value,
+                        "right_value": learning_rate * right_value,
+                    }
+        if best is None:
+            break
+        feature = x[:, best["feature_index"]]
+        predictions += np.where(
+            feature <= best["threshold"], best["left_value"], best["right_value"]
+        )
+        stumps.append(best)
+    return stumps
+
+
+def _predict_tree_stumps(x: np.ndarray, stumps: list[_TreeStump]) -> np.ndarray:
+    predictions = np.zeros(len(x), dtype=float)
+    for stump in stumps:
+        feature = x[:, stump["feature_index"]]
+        predictions += np.where(
+            feature <= stump["threshold"],
+            stump["left_value"],
+            stump["right_value"],
+        )
+    return predictions
+
+
+def _fit_model(
+    model: str,
+    x: np.ndarray,
+    y: np.ndarray,
+    config: WalkForwardConfig,
+    *,
+    elastic_net_l1_ratio: float,
+    robust_delta: float,
+) -> np.ndarray:
+    if model == "ridge":
+        return _fit_ridge(x, y, config.alpha)
+    if model == "elastic_net":
+        return _fit_elastic_net(
+            x,
+            y,
+            config.alpha,
+            l1_ratio=elastic_net_l1_ratio,
+        )
+    if model == "robust_ridge":
+        return _fit_robust_ridge(x, y, config.alpha, delta=robust_delta)
+    raise ValueError(f"unsupported model: {model}")
+
+
 def _screen_features(
     x_train: pd.DataFrame,
     y_train: pd.Series,
@@ -71,12 +236,54 @@ def walk_forward_ridge(
     config: WalkForwardConfig,
 ) -> tuple[pd.Series, list[dict[str, Any]]]:
     """生成严格样本外预测；每折训练标签在测试期开始前已完全实现。"""
+    predictions, folds = walk_forward_models(
+        features,
+        target,
+        config=config,
+        models=("ridge",),
+    )
+    return predictions["ridge"], folds
+
+
+def walk_forward_models(
+    features: pd.DataFrame,
+    target: pd.Series,
+    *,
+    config: WalkForwardConfig,
+    models: tuple[str, ...] = (
+        "ridge",
+        "elastic_net",
+        "robust_ridge",
+        "tree_stumps",
+    ),
+    elastic_net_l1_ratio: float = 0.3,
+    robust_delta: float = 1.5,
+) -> tuple[dict[str, pd.Series], list[dict[str, Any]]]:
+    """在每个训练折拟合多个固定模型，并输出不使用测试期选模的等权集成。"""
     config.validate()
+    normalized_models = tuple(dict.fromkeys(models))
+    if not normalized_models:
+        raise ValueError("models 不能为空")
+    unsupported = set(normalized_models).difference(
+        {"ridge", "elastic_net", "robust_ridge", "tree_stumps"}
+    )
+    if unsupported:
+        raise ValueError(f"unsupported models: {sorted(unsupported)}")
+    if not 0 <= elastic_net_l1_ratio <= 1:
+        raise ValueError("elastic_net_l1_ratio 必须在 [0, 1] 内")
+    if robust_delta <= 0:
+        raise ValueError("robust_delta 必须为正数")
     if not features.index.equals(target.index):
         target = target.reindex(features.index)
     numeric = features.apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan)
     target = pd.to_numeric(target, errors="coerce").replace([np.inf, -np.inf], np.nan)
-    predictions = pd.Series(np.nan, index=features.index, name="ml_ridge_composite")
+    predictions = {
+        model: pd.Series(np.nan, index=features.index, name=f"ml_{model}_composite")
+        for model in normalized_models
+    }
+    predictions["ensemble"] = pd.Series(
+        np.nan, index=features.index, name="ml_multi_model_ensemble"
+    )
     folds: list[dict[str, Any]] = []
     n_rows = len(features)
     first_test = config.min_train_size + config.horizon + config.embargo
@@ -115,12 +322,49 @@ def walk_forward_ridge(
         stds = stds[columns]
         x_train = x_train[columns]
         target_mean = float(train_y.mean())
-        weights = _fit_ridge(
-            x_train.to_numpy(), train_y.to_numpy() - target_mean, config.alpha
-        )
+        train_array = x_train.to_numpy()
+        centered_target = train_y.to_numpy() - target_mean
         test_x = numeric.iloc[test_start:test_end][columns]
         x_test = test_x.fillna(means).sub(means).div(stds)
-        predictions.iloc[test_start:test_end] = x_test.to_numpy() @ weights + target_mean
+        test_array = x_test.to_numpy()
+        model_weights: dict[str, dict[str, float]] = {}
+        fold_predictions: list[np.ndarray] = []
+        weight_arrays: list[np.ndarray] = []
+        for model in normalized_models:
+            if model == "tree_stumps":
+                stumps = _fit_tree_stumps(train_array, centered_target)
+                model_prediction = _predict_tree_stumps(test_array, stumps) + target_mean
+                predictions[model].iloc[test_start:test_end] = model_prediction
+                fold_predictions.append(model_prediction)
+                feature_importance = np.zeros(len(columns), dtype=float)
+                for stump in stumps:
+                    feature_importance[stump["feature_index"]] += (
+                        stump["right_value"] - stump["left_value"]
+                    )
+                weight_arrays.append(feature_importance)
+                model_weights[model] = {
+                    name: float(value)
+                    for name, value in zip(columns, feature_importance, strict=True)
+                }
+                continue
+            weights = _fit_model(
+                model,
+                train_array,
+                centered_target,
+                config,
+                elastic_net_l1_ratio=elastic_net_l1_ratio,
+                robust_delta=robust_delta,
+            )
+            model_prediction = test_array @ weights + target_mean
+            predictions[model].iloc[test_start:test_end] = model_prediction
+            fold_predictions.append(model_prediction)
+            weight_arrays.append(weights)
+            model_weights[model] = {
+                name: float(value) for name, value in zip(columns, weights, strict=True)
+            }
+        ensemble_prediction = np.mean(np.vstack(fold_predictions), axis=0)
+        predictions["ensemble"].iloc[test_start:test_end] = ensemble_prediction
+        ensemble_weights = np.mean(np.vstack(weight_arrays), axis=0)
         folds.append(
             {
                 "train_start": str(train_x.index.min()),
@@ -131,10 +375,14 @@ def walk_forward_ridge(
                 "n_test": int(len(test_x)),
                 "feature_count": len(columns),
                 "intercept": target_mean,
+                "models": list(normalized_models),
+                "model_weights": model_weights,
                 "weights": {
-                    name: float(value) for name, value in zip(columns, weights, strict=True)
+                    name: float(value)
+                    for name, value in zip(columns, ensemble_weights, strict=True)
                 },
                 "screening_scores": screening_scores,
+                "ensemble_rule": "equal_weight_no_test_period_model_selection",
             }
         )
     return predictions, folds
@@ -148,7 +396,7 @@ def aggregate_feature_recommendations(
     """Summarize train-fold feature selection without inspecting test returns."""
     if top_n < 1:
         raise ValueError("top_n must be positive")
-    aggregate: dict[str, dict[str, list[float] | int]] = {}
+    aggregate: dict[str, _RecommendationBucket] = {}
     for fold in folds:
         weights = fold.get("weights", {})
         screening = fold.get("screening_scores", {})
@@ -159,8 +407,6 @@ def aggregate_feature_recommendations(
             )
             weight_values = bucket["weights"]
             score_values = bucket["screening_scores"]
-            if not isinstance(weight_values, list) or not isinstance(score_values, list):
-                raise TypeError("invalid recommendation accumulator")
             weight_values.append(float(raw_weight))
             if name in screening:
                 score_values.append(float(screening[name]))

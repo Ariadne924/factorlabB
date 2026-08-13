@@ -71,7 +71,7 @@ def build_workflow_steps(
             else "尚无报告；也可以直接用正式 registry 构建策略。"
         ),
         "action_label": "浏览候选因子",
-        "action_page": "因子研究",
+        "action_page": "因子检验",
         "optional": True,
     }
     if has_strategy_result:
@@ -89,7 +89,7 @@ def build_workflow_steps(
         "state": strategy_state,
         "summary": strategy_summary,
         "action_label": "继续构建策略" if has_strategy_result else "开始构建策略",
-        "action_page": "时序策略",
+        "action_page": "策略研究",
         "optional": False,
     }
     if has_strategy_result and has_robustness_result and has_walk_forward_result:
@@ -107,7 +107,7 @@ def build_workflow_steps(
         "state": validation_state,
         "summary": validation_summary,
         "action_label": "查看策略验证",
-        "action_page": "时序策略" if has_strategy_result else "策略比较",
+        "action_page": "策略研究",
         "optional": False,
     }
     return [data, factor, strategy, validation]

@@ -21,10 +21,10 @@ from evaluation.ml_factor_mining import (  # noqa: E402
     WalkForwardConfig,
     aggregate_feature_recommendations,
     backtest_oos_predictions,
-    walk_forward_ridge,
+    walk_forward_models,
 )
-from evaluation.time_series_strategy import build_ml_strategy_preset  # noqa: E402
 from evaluation.robustness import forward_return  # noqa: E402
+from evaluation.time_series_strategy import build_ml_strategy_preset  # noqa: E402
 from factors.registry import compute_factor, get_factor_metadata, list_factors  # noqa: E402
 from visualization.single_factor_report import (  # noqa: E402
     build_single_factor_report_data,
@@ -91,19 +91,32 @@ def run(
     *,
     symbols: tuple[str, ...] | None = None,
     intervals: tuple[str, ...] | None = None,
+    scopes: tuple[tuple[str, str], ...] | None = None,
     horizon: int = 1,
-    min_train_days: int = 90,
+    min_train_days: int = 120,
     test_days: int = 14,
     embargo_bars: int = 1,
     alpha: float = 10.0,
     parameter_windows: tuple[int, ...] = (6, 12, 24, 48),
     max_features: int = 80,
     max_pairwise_correlation: float = 0.95,
+    models: tuple[str, ...] = (
+        "ridge",
+        "elastic_net",
+        "robust_ridge",
+        "tree_stumps",
+    ),
+    elastic_net_l1_ratio: float = 0.3,
+    robust_delta: float = 1.5,
 ) -> dict[str, Any]:
     output_dir = reports_dir / "ml_factor"
     output_dir.mkdir(parents=True, exist_ok=True)
     symbol_filter = {item.upper() for item in symbols or ()}
     interval_filter = {"1d" if item == "24h" else item for item in intervals or ()}
+    scope_filter = {
+        (symbol.upper(), "1d" if interval == "24h" else interval)
+        for symbol, interval in scopes or ()
+    }
     results: list[dict[str, Any]] = []
 
     for silver_path in sorted(data_dir.glob("silver/**/klines.parquet")):
@@ -114,6 +127,8 @@ def run(
         if symbol_filter and symbol not in symbol_filter:
             continue
         if interval_filter and interval not in interval_filter:
+            continue
+        if scope_filter and (symbol, interval) not in scope_filter:
             continue
         frame = silver_to_factor_input(silver)
         candidates, skipped = build_candidate_matrix(
@@ -129,12 +144,24 @@ def run(
             max_pairwise_correlation=max_pairwise_correlation,
         )
         target = forward_return(frame["close"], horizon)
-        prediction, folds = walk_forward_ridge(candidates, target, config=config)
+        predictions, folds = walk_forward_models(
+            candidates,
+            target,
+            config=config,
+            models=models,
+            elastic_net_l1_ratio=elastic_net_l1_ratio,
+            robust_delta=robust_delta,
+        )
+        prediction = predictions["ensemble"]
         recommendations = aggregate_feature_recommendations(folds)
         strategy_preset = build_ml_strategy_preset(recommendations)
         strategy_backtest = backtest_oos_predictions(prediction, target)
+        model_comparison = {
+            model: backtest_oos_predictions(values, target)
+            for model, values in predictions.items()
+        }
         report = build_single_factor_report_data(
-            "ml_ridge_composite",
+            "ml_multi_model_ensemble",
             prediction,
             target,
             frequency=interval,
@@ -142,7 +169,7 @@ def run(
             close_prices=frame["close"],
             metadata={
                 "category": "机器学习复合因子",
-                "description": "由已有候选因子经 expanding walk-forward Ridge 组合而成。",
+                "description": "由已有候选因子经 expanding walk-forward 多模型等权组合而成。",
                 "source": "project",
                 "scope": "strict_out_of_sample_time_series",
                 "data_dependencies": list(candidates.columns),
@@ -155,6 +182,9 @@ def run(
                     "parameter_windows": list(parameter_windows),
                     "max_features": max_features,
                     "max_pairwise_correlation": max_pairwise_correlation,
+                    "models": list(models),
+                    "elastic_net_l1_ratio": elastic_net_l1_ratio,
+                    "robust_delta": robust_delta,
                 },
             },
         )
@@ -166,6 +196,13 @@ def run(
                 "feature_recommendations": recommendations,
                 "strategy_preset": strategy_preset,
                 "strategy_backtest": strategy_backtest,
+                "model_comparison": {
+                    model: {
+                        "status": result["status"],
+                        "metrics": result.get("metrics", {}),
+                    }
+                    for model, result in model_comparison.items()
+                },
                 "candidate_feature_count": len(candidates.columns),
                 "skipped_features": skipped,
                 "leakage_controls": {
@@ -174,6 +211,8 @@ def run(
                     "train_only_standardization": True,
                     "train_only_feature_screening": True,
                     "train_only_correlation_pruning": True,
+                    "model_selection_uses_test_returns": False,
+                    "ensemble_rule": "equal_weight_fixed_before_test",
                     "target_horizon_bars": horizon,
                     "embargo_bars": embargo_bars,
                     "rule": "训练标签的收益终点必须早于测试期开始。",
@@ -184,7 +223,7 @@ def run(
                 ),
             }
         )
-        output = output_dir / f"{symbol}_{interval}_ml_ridge_composite.json"
+        output = output_dir / f"{symbol}_{interval}_ml_multi_model_ensemble.json"
         write_report_data(report, output)
         results.append(
             {
@@ -199,9 +238,10 @@ def run(
         )
 
     manifest: dict[str, Any] = {
-        "contract_version": "1.0",
+        "contract_version": "2.0",
         "status": "ok" if results else "insufficient_data",
-        "model": "ridge",
+        "models": list(models),
+        "ensemble": "equal_weight_fixed_before_test",
         "filters": {
             "symbols": sorted({str(row["symbol"]) for row in results}),
             "frequencies": sorted({str(row["interval"]) for row in results}),
@@ -224,13 +264,21 @@ def main() -> int:
     parser.add_argument("--symbols", nargs="+")
     parser.add_argument("--intervals", nargs="+")
     parser.add_argument("--horizon", type=int, default=1)
-    parser.add_argument("--min-train-days", type=int, default=90)
+    parser.add_argument("--min-train-days", type=int, default=120)
     parser.add_argument("--test-days", type=int, default=14)
     parser.add_argument("--embargo-bars", type=int, default=1)
     parser.add_argument("--alpha", type=float, default=10.0)
     parser.add_argument("--parameter-windows", nargs="+", type=int, default=[6, 12, 24, 48])
     parser.add_argument("--max-features", type=int, default=80)
     parser.add_argument("--max-pairwise-correlation", type=float, default=0.95)
+    parser.add_argument(
+        "--models",
+        nargs="+",
+        choices=("ridge", "elastic_net", "robust_ridge", "tree_stumps"),
+        default=["ridge", "elastic_net", "robust_ridge", "tree_stumps"],
+    )
+    parser.add_argument("--elastic-net-l1-ratio", type=float, default=0.3)
+    parser.add_argument("--robust-delta", type=float, default=1.5)
     args = parser.parse_args()
     manifest = run(
         args.data_dir,
@@ -245,6 +293,9 @@ def main() -> int:
         parameter_windows=tuple(args.parameter_windows),
         max_features=args.max_features,
         max_pairwise_correlation=args.max_pairwise_correlation,
+        models=tuple(args.models),
+        elastic_net_l1_ratio=args.elastic_net_l1_ratio,
+        robust_delta=args.robust_delta,
     )
     print(json.dumps(manifest, ensure_ascii=False, indent=2))
     return 0

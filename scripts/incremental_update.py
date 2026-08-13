@@ -19,7 +19,14 @@ from scripts.run_all_research import run as run_research  # noqa: E402
 def main(
     *,
     dry_run: bool = False,
-    symbols: tuple[str, ...] = ("BTCUSDT", "ETHUSDT", "SOLUSDT"),
+    symbols: tuple[str, ...] = (
+        "BTCUSDT",
+        "ETHUSDT",
+        "SOLUSDT",
+        "BNBUSDT",
+        "XRPUSDT",
+        "DOGEUSDT",
+    ),
     intervals: tuple[str, ...] = ("1m", "5m", "1h"),
     lookback_hours: int = 24,
     data_dir: Path = PROJECT_ROOT / "data",
@@ -52,7 +59,18 @@ def main(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="增量刷新数据并更新研究报告")
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--symbols", nargs="+", default=["BTCUSDT", "ETHUSDT", "SOLUSDT"])
+    parser.add_argument(
+        "--symbols",
+        nargs="+",
+        default=[
+            "BTCUSDT",
+            "ETHUSDT",
+            "SOLUSDT",
+            "BNBUSDT",
+            "XRPUSDT",
+            "DOGEUSDT",
+        ],
+    )
     parser.add_argument("--intervals", nargs="+", default=["1m", "5m", "1h"])
     parser.add_argument("--lookback-hours", type=int, default=24)
     parser.add_argument("--data-dir", type=Path, default=PROJECT_ROOT / "data")

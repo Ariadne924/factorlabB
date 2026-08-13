@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, replace
-from typing import Any, Iterable
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -66,12 +67,13 @@ def _selection_row(
     metrics = _path_metrics(returns["net_return"])
     sharpe = metrics["bar_sharpe"]
     total_return = metrics["total_return"]
+    n_periods = metrics["n_periods"]
     turnover = returns["turnover"].mean() if not returns.empty else None
     return {
         "score_threshold": config.score_threshold,
         "rebalance_every": config.rebalance_every,
         "standardize_window": config.standardize_window,
-        "n_periods": int(metrics["n_periods"]),
+        "n_periods": int(n_periods) if n_periods is not None else 0,
         "train_bar_sharpe": float(sharpe) if sharpe is not None else None,
         "train_total_return": float(total_return) if total_return is not None else None,
         "train_mean_turnover": float(turnover) if turnover is not None else None,

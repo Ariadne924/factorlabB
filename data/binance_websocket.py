@@ -34,7 +34,12 @@ class BinanceWebSocketStream:
         backoff_cap: float = 8.0,
         max_reconnects: int | None = None,
     ) -> None:
-        self.url = f"{base_url.rstrip('/')}/{stream_name.lower()}"
+        normalized_base = base_url.rstrip("/")
+        separator = "" if normalized_base.endswith("=") else "/"
+        normalized_streams = "/".join(
+            self._normalize_stream_name(name) for name in stream_name.split("/")
+        )
+        self.url = f"{normalized_base}{separator}{normalized_streams}"
         self._connector = connector or (
             lambda url, timeout: websocket.create_connection(url, timeout=timeout)
         )
@@ -45,6 +50,12 @@ class BinanceWebSocketStream:
         self.max_reconnects = max_reconnects
         self._closed = False
         self._socket: SocketLike | None = None
+
+    @staticmethod
+    def _normalize_stream_name(stream_name: str) -> str:
+        """Binance 要求交易对小写，但部分事件名本身大小写敏感。"""
+        symbol, separator, event = stream_name.partition("@")
+        return f"{symbol.lower()}{separator}{event}"
 
     def close(self) -> None:
         self._closed = True

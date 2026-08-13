@@ -33,13 +33,15 @@ def test_frontend_payload_is_versioned_and_filterable(tmp_path) -> None:
         "cross_frequency": [{"factor_name": "basis_zscore"}],
     }
     payload = build_frontend_payload(summary)
-    assert payload["contract_version"] == "1.2"
+    assert payload["contract_version"] == "1.3"
     assert payload["filters"]["symbols"] == ["BTCUSDT", "ETHUSDT"]
     assert payload["filters"]["frequencies"] == ["1h", "24h"]
     assert payload["overview"]["factor_count"] == 53
     assert payload["panel_factor_results"] == []
     assert payload["data_health"]["path"] == "data_health.json"
     assert payload["data_health"]["summary"]["core_covered_datasets"] == 25
+    assert payload["training_readiness"]["path"] is None
+    assert payload["factor_grades"] == "factor_grades/latest.json"
 
     output = write_frontend_payload(summary, tmp_path / "frontend_payload.json")
     assert json.loads(output.read_text("utf-8"))["disclaimer"] == "not validated alpha"
