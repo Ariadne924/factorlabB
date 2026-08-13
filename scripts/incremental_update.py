@@ -1,72 +1,67 @@
-"""
-增量更新脚本（占位框架）
-
-用于每日增量更新数据、重新计算因子、更新评估结果。
-"""
+"""增量刷新现有研究数据，并可重新生成研究报告。"""
 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
+from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from utils.logger import setup_logger  # noqa: E402
+from data.catalog import build_data_catalog  # noqa: E402
+from data.refresh import refresh_recent_market_data  # noqa: E402
+from scripts.run_all_research import run as run_research  # noqa: E402
 
-logger = setup_logger(__name__)
 
-
-def main(*, dry_run: bool = False) -> int:
-    """增量更新入口"""
-    if not dry_run:
-        logger.error(
-            "增量更新尚未实现。仅检查编排请使用: "
-            "python scripts/incremental_update.py --dry-run"
-        )
-        return 2
-
-    logger.info("=== 开始增量更新 ===")
-
-    # ----------------------------------------------------------------
-    # 1. 获取最新数据
-    # ----------------------------------------------------------------
-    logger.info("[1/4] 拉取增量数据...")
-    # TODO: 实现增量数据拉取
-    logger.info("[1/4] 未执行（dry-run）")
-
-    # ----------------------------------------------------------------
-    # 2. 更新因子值
-    # ----------------------------------------------------------------
-    logger.info("[2/4] 重新计算因子值...")
-    # TODO: 只更新受新数据影响的因子
-    logger.info("[2/4] 未执行（dry-run）")
-
-    # ----------------------------------------------------------------
-    # 3. 更新评估指标
-    # ----------------------------------------------------------------
-    logger.info("[3/4] 更新评估指标...")
-    # TODO: 滚动计算最新 IC、分组收益等
-    logger.info("[3/4] 未执行（dry-run）")
-
-    # ----------------------------------------------------------------
-    # 4. 刷新报告
-    # ----------------------------------------------------------------
-    logger.info("[4/4] 刷新分析报告...")
-    # TODO: 更新图表和 HTML 报告
-    logger.info("[4/4] 未执行（dry-run）")
-
-    logger.info("=== dry-run 完成：未更新任何数据 ===")
+def main(
+    *,
+    dry_run: bool = False,
+    symbols: tuple[str, ...] = ("BTCUSDT", "ETHUSDT", "SOLUSDT"),
+    intervals: tuple[str, ...] = ("1m", "5m", "1h"),
+    lookback_hours: int = 24,
+    data_dir: Path = PROJECT_ROOT / "data",
+    reports_dir: Path = PROJECT_ROOT / "reports",
+    refresh: Any | None = None,
+    research: Any | None = None,
+) -> int:
+    plan = {
+        "symbols": list(symbols), "intervals": list(intervals),
+        "lookback_hours": lookback_hours, "data_dir": str(data_dir),
+        "reports_dir": str(reports_dir),
+    }
+    if dry_run:
+        print(json.dumps({"status": "dry_run", **plan}, ensure_ascii=False, indent=2))
+        return 0
+    refresh_fn = refresh or refresh_recent_market_data
+    research_fn = research or run_research
+    result = refresh_fn(
+        data_dir, symbols=symbols, intervals=intervals, lookback_hours=lookback_hours
+    )
+    build_data_catalog(data_dir, reports_dir / "data_catalog.json")
+    if not result.get("successful"):
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 1
+    manifest = research_fn(data_dir, reports_dir, symbols=symbols, intervals=intervals)
+    print(json.dumps({"refresh": result, "research": manifest}, ensure_ascii=False, indent=2))
     return 0
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="量化因子库增量更新入口")
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="仅展示计划中的增量步骤，不执行数据处理",
-    )
+    parser = argparse.ArgumentParser(description="增量刷新数据并更新研究报告")
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--symbols", nargs="+", default=["BTCUSDT", "ETHUSDT", "SOLUSDT"])
+    parser.add_argument("--intervals", nargs="+", default=["1m", "5m", "1h"])
+    parser.add_argument("--lookback-hours", type=int, default=24)
+    parser.add_argument("--data-dir", type=Path, default=PROJECT_ROOT / "data")
+    parser.add_argument("--reports-dir", type=Path, default=PROJECT_ROOT / "reports")
     args = parser.parse_args()
-    raise SystemExit(main(dry_run=args.dry_run))
+    raise SystemExit(
+        main(
+            dry_run=args.dry_run, symbols=tuple(args.symbols), intervals=tuple(args.intervals),
+            lookback_hours=args.lookback_hours, data_dir=args.data_dir,
+            reports_dir=args.reports_dir,
+        )
+    )

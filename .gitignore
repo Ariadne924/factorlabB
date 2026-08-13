@@ -47,7 +47,12 @@ reports/*.png
 reports/*.pdf
 reports/data_quality_*.json
 reports/data_download_manifest.json
+reports/real_data_collection_manifest.json
+reports/data_catalog.json
+reports/data_health.json
 reports/single_factor/[A-Z]*_*.json
+reports/ml_factor/[A-Z]*_*.json
+reports/strategy_snapshots/
 
 # ---- 分发/打包 ----
 dist/
@@ -58,6 +63,8 @@ build/
 # ---- 测试 ----
 .pytest_cache/
 .test-tmp/
+.tmp_pytest/
+.tmp_pytest_*/
 .coverage
 htmlcov/
 .tox/

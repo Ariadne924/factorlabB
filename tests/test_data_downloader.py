@@ -5,10 +5,16 @@ from datetime import UTC, datetime
 import pandas as pd
 import requests
 
-from data.downloader import DataDownloader
+from data.downloader import DataDownloader, _derivatives_feature_period
 from data.schema import KlineRaw, raw_to_dataframe
 from data.silver import merge_point_in_time_features
-from scripts.download_research_data import build_plan, main
+from scripts.download_research_data import (
+    CORE_RESEARCH_SYMBOLS,
+    DEFAULT_RESEARCH_INTERVALS,
+    build_multi_frequency_plan,
+    build_plan,
+    main,
+)
 
 
 class FakeBinanceClient:
@@ -108,6 +114,22 @@ def test_bundle_paginates_and_merges_features_without_basis_lookahead(tmp_path) 
     assert silver.loc[1, "basis"] == 0.01
 
 
+def test_bundle_can_fill_one_exact_missing_bar(tmp_path) -> None:
+    fake = FakeBinanceClient()
+    manifest = DataDownloader(
+        data_dir=tmp_path, client_factory=lambda _: fake
+    ).download_bundle(
+        symbol="BTCUSDT",
+        interval="1h",
+        start="2026-01-01T02:00:00Z",
+        end="2026-01-01T02:00:00Z",
+    )
+    assert manifest["rows"]["klines"] == 1
+    silver = pd.read_parquet(manifest["paths"]["silver_klines"])
+    assert len(silver) == 1
+    assert silver.loc[0, "open_time_utc"] == pd.Timestamp("2026-01-01T02:00:00Z")
+
+
 def test_download_plan_is_safe_by_default(capsys) -> None:
     plan = build_plan(
         symbols=["btcusdt", "ethusdt"],
@@ -118,7 +140,30 @@ def test_download_plan_is_safe_by_default(capsys) -> None:
     assert plan["status"] == "dry_run"
     assert plan["estimated_kline_rows_per_symbol"] == 25
     assert main(["--start", "2026-01-01", "--end", "2026-01-02"]) == 0
-    assert '"status": "dry_run"' in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert '"status": "dry_run"' in output
+    assert '"download_ranges"' in output
+
+
+def test_multi_frequency_plan_accepts_24h_alias() -> None:
+    plan = build_multi_frequency_plan(
+        symbols=["btcusdt"],
+        intervals=["1m", "1h", "6h", "24h"],
+        start="2026-01-01",
+        end="2026-01-02",
+    )
+    assert plan["intervals"] == ["1m", "1h", "6h", "1d"]
+    assert plan["display_intervals"] == ["1m", "1h", "6h", "24h"]
+    assert plan["estimated_total_kline_rows"] == 1473
+    assert _derivatives_feature_period("1m") == "5m"
+    assert _derivatives_feature_period("6h") == "6h"
+
+
+def test_default_frequency_and_core_universe_are_explicit() -> None:
+    assert DEFAULT_RESEARCH_INTERVALS == ("1m", "5m", "15m", "1h", "6h", "1d")
+    assert len(CORE_RESEARCH_SYMBOLS) == 12
+    assert len(set(CORE_RESEARCH_SYMBOLS)) == len(CORE_RESEARCH_SYMBOLS)
+    assert {"BTCUSDT", "ETHUSDT", "SOLUSDT"}.issubset(CORE_RESEARCH_SYMBOLS)
 
 
 def test_optional_feature_failure_does_not_discard_klines(tmp_path) -> None:

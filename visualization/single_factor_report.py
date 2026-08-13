@@ -9,6 +9,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from evaluation.cost_sensitivity import compute_breakeven_cost, cost_adjusted_return
 from evaluation.grouping_test import grouping_backtest
 from evaluation.ic_analysis import compute_ic, compute_rank_ic, rolling_ic
 from evaluation.robustness import (
@@ -61,6 +62,8 @@ def insufficient_report(
         "ic_decay": [],
         "group_returns": [],
         "rolling_ic": [],
+        "cost_sensitivity": [],
+        "breakeven_cost": None,
         "lookahead_status": "not_run",
         "cost_assumptions": {"fee_rate": 0.001, "slippage": 0.0005, "units": "one-way"},
         "research_note": "无足够真实样本；不得据此宣称已验证 alpha 或完成 6 个月 OOS。",
@@ -127,6 +130,20 @@ def build_single_factor_report_data(
         n_bootstrap=bootstrap_samples,
         block_size=bootstrap_block_size,
     )
+    cost_grid = []
+    for total_cost in (0.0, 0.0005, 0.001, 0.0015, 0.002):
+        # Split evenly so the helper's fee + slippage equals the displayed one-way cost.
+        net = cost_adjusted_return(
+            aligned["factor"], aligned["forward_return"],
+            fee_rate=total_cost / 2, slippage=total_cost / 2,
+        )
+        cost_grid.append(
+            {
+                "one_way_cost": total_cost,
+                "mean_net_return": _number(net.mean()),
+                "cumulative_net_return": _number(net.sum()),
+            }
+        )
     sample_index = aligned.index
     start = (
         sample_index.min().isoformat()
@@ -186,6 +203,10 @@ def build_single_factor_report_data(
         "rolling_ic": [
             {"time": str(index), "value": _number(value)} for index, value in rolling.items()
         ],
+        "cost_sensitivity": cost_grid,
+        "breakeven_cost": _number(
+            compute_breakeven_cost(aligned["factor"], aligned["forward_return"])
+        ),
         "lookahead_status": lookahead_status,
         "cost_assumptions": {"fee_rate": fee_rate, "slippage": slippage, "units": "one-way"},
         "research_note": (

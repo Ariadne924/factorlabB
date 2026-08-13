@@ -41,3 +41,6 @@ def test_all_basic_anomaly_flags_and_summary() -> None:
     summary = DataValidator.summarize_quality_flags(flags)
     assert summary["rows"] == 4
     assert summary["flag_counts"]["exchange_gap"] == 1
+    assert summary["flagged_timestamps_utc"]["exchange_gap"] == [
+        "2026-01-01T04:00:00+00:00"
+    ]

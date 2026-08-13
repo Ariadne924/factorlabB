@@ -47,8 +47,8 @@ class QlibStyleFactorTests(unittest.TestCase):
             "volume_change_strength",
         ]
 
-    def test_registry_contains_33_factors_with_provenance(self) -> None:
-        self.assertEqual(len(list_factors()), 33)
+    def test_registry_contains_qlib_style_factors_with_provenance(self) -> None:
+        self.assertTrue(set(self.names).issubset(list_factors()))
         for name in self.names:
             metadata = get_factor_metadata(name)
             self.assertEqual(metadata["source"], "Microsoft Qlib Alpha158")
@@ -76,4 +76,3 @@ class QlibStyleFactorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -20,6 +20,11 @@ from data.silver import merge_point_in_time_features, silver_to_factor_input
 ClientFactory = Callable[[str], BinanceClient]
 
 
+def _derivatives_feature_period(interval: str) -> str:
+    """OI/Basis 不提供 1m 周期，分钟研究使用已结束的 5m 观测。"""
+    return "5m" if interval == "1m" else interval
+
+
 def _utc(value: str | datetime) -> datetime:
     parsed = pd.Timestamp(value)
     if parsed.tzinfo is None:
@@ -128,8 +133,8 @@ class DataDownloader:
         market: str = "futures",
     ) -> pd.DataFrame:
         start_dt, end_dt = _utc(start), _utc(end)
-        if start_dt >= end_dt:
-            raise ValueError("start 必须早于 end")
+        if start_dt > end_dt:
+            raise ValueError("start 不得晚于 end")
         interval_enum = KlineInterval(interval)
         step_ms = get_interval_ms(interval_enum.value)
         client = self.client_factory(symbol)
@@ -206,14 +211,14 @@ class DataDownloader:
     ) -> dict[str, Any]:
         """下载一个永续研究 bundle，并生成带 point-in-time 特征的 Silver K 线。"""
         start_dt, end_dt = _utc(start), _utc(end)
-        if start_dt >= end_dt:
-            raise ValueError("start 必须早于 end")
+        if start_dt > end_dt:
+            raise ValueError("start 不得晚于 end")
         client = self.client_factory(symbol)
         server_time = client.fetch_server_time()
         effective_end = min(end_dt, server_time)
-        if start_dt >= effective_end:
+        if start_dt > effective_end:
             raise ValueError(
-                f"start {start_dt.isoformat()} 不早于 Binance 服务器时间 "
+                f"start {start_dt.isoformat()} 晚于 Binance 服务器时间 "
                 f"{server_time.isoformat()}"
             )
         kline_frame = self.fetch_klines_range(
@@ -227,6 +232,7 @@ class DataDownloader:
             raise ValueError("请求范围内没有永续 K 线数据")
 
         feature_errors: dict[str, str] = {}
+        feature_period = _derivatives_feature_period(interval)
 
         def optional_feature(name: str, fetch: Callable[[], pd.DataFrame]) -> pd.DataFrame:
             try:
@@ -252,7 +258,7 @@ class DataDownloader:
                 "open_interest",
                 lambda: self._paginate_datetime(
                     lambda left, right: client.fetch_open_interest(
-                        period=interval, start_time=left, end_time=right, limit=500
+                        period=feature_period, start_time=left, end_time=right, limit=500
                     ),
                     start=feature_start,
                     end=effective_end,
@@ -266,7 +272,7 @@ class DataDownloader:
                 "basis",
                 lambda: self._paginate_datetime(
                     lambda left, right: client.fetch_historical_basis(
-                        period=interval, start_time=left, end_time=right, limit=500
+                        period=feature_period, start_time=left, end_time=right, limit=500
                     ),
                     start=feature_start,
                     end=effective_end,
@@ -325,7 +331,7 @@ class DataDownloader:
         if not stored_basis.empty:
             available_basis = stored_basis.copy()
             available_basis["available_at"] = available_basis["timestamp"] + pd.to_timedelta(
-                get_interval_ms(interval), unit="ms"
+                get_interval_ms(feature_period), unit="ms"
             )
             enriched = merge_point_in_time_features(
                 enriched,
@@ -369,6 +375,7 @@ class DataDownloader:
                 "Binance REST historical open interest and basis are limited to about 30 days.",
                 "Long-history OI/Basis must be imported from an archive; missing values stay null.",
                 "Basis becomes available only after its source period ends to prevent lookahead.",
+                f"OI/Basis source period is {feature_period}; 1m research uses closed 5m data.",
             ],
             "feature_errors": feature_errors,
         }

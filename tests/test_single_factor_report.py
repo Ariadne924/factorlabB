@@ -5,6 +5,7 @@ import json
 import numpy as np
 import pandas as pd
 
+from factors.registry import list_factors
 from scripts.run_all_research import run
 from visualization.single_factor_report import build_single_factor_report_data, write_report_data
 
@@ -31,6 +32,8 @@ def test_report_contains_required_sections(tmp_path) -> None:
     assert report["ic_decay"]
     assert report["group_returns"]
     assert report["rolling_ic"]
+    assert len(report["cost_sensitivity"]) == 5
+    assert "breakeven_cost" in report
     assert len(report["robustness"]["window_horizon"]) == 2
     assert report["robustness"]["bootstrap_rank_ic"]["n_bootstrap"] == 20
     assert report["provenance"]["source"] == "unit-test"
@@ -43,10 +46,12 @@ def test_research_entry_is_honest_without_data(tmp_path) -> None:
     assert manifest["status"] == "insufficient_data"
     assert manifest["oos_6_months_completed"] is False
     generated = list((tmp_path / "reports" / "single_factor").glob("*.json"))
-    assert len(generated) == 33
+    assert len(generated) == len(list_factors())
     assert all(
         json.loads(path.read_text(encoding="utf-8"))["metrics"]["ic"] is None for path in generated
     )
     summary = json.loads((tmp_path / "reports" / "research_summary.json").read_text("utf-8"))
     assert summary["computed_report_count"] == 0
     assert summary["fdr_5pct_pass_count"] == 0
+    lookahead = json.loads((tmp_path / "reports" / "lookahead_report.json").read_text("utf-8"))
+    assert lookahead["status"] == "not_run"

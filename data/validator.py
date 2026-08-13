@@ -138,7 +138,19 @@ class DataValidator:
             column: int(flags[column].fillna(False).astype(bool).sum()) for column in flag_columns
         }
         ratios = {column: (count / total if total else 0.0) for column, count in counts.items()}
-        return {"rows": total, "flag_counts": counts, "flag_ratios": ratios}
+        events: dict[str, list[str]] = {}
+        for column in flag_columns:
+            mask = flags[column].fillna(False).astype(bool)
+            events[column] = [
+                pd.Timestamp(value).isoformat()
+                for value in flags.loc[mask, "open_time_utc"].tolist()
+            ]
+        return {
+            "rows": total,
+            "flag_counts": counts,
+            "flag_ratios": ratios,
+            "flagged_timestamps_utc": events,
+        }
 
     @staticmethod
     def validate_schema(df: pd.DataFrame, required_columns: list[str]) -> bool:
