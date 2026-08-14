@@ -49,6 +49,13 @@ from evaluation.time_series_strategy import (  # noqa: E402
 from factors.panel_registry import list_panel_factors  # noqa: E402
 from factors.registry import list_factors  # noqa: E402
 from scripts.run_ml_factor_mining import run as run_ml_factor_research  # noqa: E402
+from strategies import create_strategy, list_strategies  # noqa: E402
+from strategies.backtest import (  # noqa: E402
+    BacktestConfig,
+    compare_backtest_engines,
+    run_event_backtest,
+)
+from trading.risk import RiskLimits  # noqa: E402
 from visualization.navigation import (  # noqa: E402
     FACTOR_VALIDATION_TABS,
     LEGACY_PAGE_REDIRECTS,
@@ -1154,6 +1161,13 @@ page = st.sidebar.radio(
 st.sidebar.caption("推荐路径：开始使用 → 实时行情 / 数据中心 → 策略构建 → 验证与比较")
 st.sidebar.divider()
 st.sidebar.caption("策略构建与比较统一在‘策略研究’；因子结果统一在‘因子检验’。")
+runtime_status = load_json(REPORT_ROOT / "service_status.json")
+runtime_label = {
+    "running": "运行中",
+    "failed": "已熔断",
+    "stopped": "已停止",
+}.get(str(runtime_status.get("status")), "未由守护器启动")
+st.sidebar.caption(f"中后端服务：{runtime_label}")
 
 header_catalog = load_json(REPORT_ROOT / "data_catalog.json")
 header_entries = list(header_catalog.get("entries", []))
@@ -1182,7 +1196,7 @@ status_columns[1].metric(
 )
 status_columns[2].metric(
     "可用策略入口",
-    "单资产 + 多资产",
+    "四模板 + 单资产 + 多资产",
     f"{len(list_factors())} 单资产因子 · {len(list_panel_factors())} 截面因子",
 )
 status_columns[3].metric(
@@ -1217,7 +1231,7 @@ filtered = [
 strategy_view: str | None = None
 if page == "策略研究":
     st.header("策略研究")
-    st.caption("先选择研究目标，再配置数据、因子和成本；三个模式共用一个入口。")
+    st.caption("先选择研究目标，再配置数据、因子和成本；四个模式共用一个入口。")
     strategy_view = st.radio(
         "研究模式",
         STRATEGY_RESEARCH_VIEWS,
@@ -1231,8 +1245,18 @@ if page == "开始使用":
     render_workflow_overview(workflow_steps)
 
     st.subheader("快速入口")
-    quick_columns = st.columns(3)
+    quick_columns = st.columns(4)
     with quick_columns[0].container(border=True):
+        st.write("**四类策略模板**")
+        st.caption("趋势、网格、统计套利和均值回归，共用正式回测与风控。")
+        st.button(
+            "打开策略模板",
+            key="quick_task2_templates",
+            use_container_width=True,
+            on_click=navigate_to,
+            args=("策略研究", "策略模板"),
+        )
+    with quick_columns[1].container(border=True):
         st.write("**单币种择时**")
         st.caption("选择多个因子、方向和权重，完成含成本时序回测。")
         st.button(
@@ -1242,7 +1266,7 @@ if page == "开始使用":
             on_click=navigate_to,
             args=("策略研究", "单币种择时"),
         )
-    with quick_columns[1].container(border=True):
+    with quick_columns[2].container(border=True):
         st.write("**多币种选币**")
         st.caption("使用同频率多资产面板构建截面多因子组合。")
         st.button(
@@ -1252,7 +1276,7 @@ if page == "开始使用":
             on_click=navigate_to,
             args=("策略研究", "多币种选币"),
         )
-    with quick_columns[2].container(border=True):
+    with quick_columns[3].container(border=True):
         st.write("**已有结果比较**")
         st.caption("比较用户明确保存的策略快照，不自动混入临时结果。")
         st.button(
@@ -1428,6 +1452,165 @@ elif page == "因子检验":
             chart = cross_frame.dropna(subset=["median_rank_ic"]).set_index("factor_name")
             if not chart.empty:
                 st.bar_chart(chart["median_rank_ic"])
+
+elif page == "策略研究" and strategy_view == "策略模板":
+    st.subheader("Task 2 四类策略模板")
+    st.caption(
+        "统一使用一根 K 线执行滞后；先检查向量化/逐事件一致性，再启用路径依赖风控。"
+    )
+    catalog = load_json(REPORT_ROOT / "data_catalog.json")
+    health = load_data_health(str(catalog.get("generated_at") or "missing"))
+    ready_scopes = sorted(
+        (str(entry["symbol"]), str(entry["interval"]))
+        for entry in health["datasets"]
+        if entry["research_ready"]
+    )
+    if not ready_scopes:
+        st.info("没有达到研究门槛的数据集；请先在数据中心补数。")
+    else:
+        templates = list_strategies()
+        template_names = [str(row["name"]) for row in templates]
+        template_labels = {
+            str(row["name"]): f"{row['category']} · {row['description']}" for row in templates
+        }
+        template_name = st.selectbox(
+            "策略类型", template_names, format_func=template_labels.__getitem__
+        )
+        scope_labels = [
+            f"{symbol} · {'24h' if interval == '1d' else interval}"
+            for symbol, interval in ready_scopes
+        ]
+        selected_scope = st.selectbox(
+            "数据口径",
+            range(len(scope_labels)),
+            format_func=scope_labels.__getitem__,
+            key="task2_scope",
+        )
+        task2_symbol, task2_interval = ready_scopes[selected_scope]
+        params: dict[str, Any] = {}
+        parameter_columns = st.columns(3)
+        if template_name == "trend_following":
+            params["fast_window"] = int(
+                parameter_columns[0].number_input("快窗口", min_value=2, value=24)
+            )
+            params["slow_window"] = int(
+                parameter_columns[1].number_input("慢窗口", min_value=3, value=168)
+            )
+        elif template_name == "grid_trading":
+            params["anchor_window"] = int(
+                parameter_columns[0].number_input("锚点窗口", min_value=5, value=72)
+            )
+            params["grid_step"] = float(
+                parameter_columns[1].number_input(
+                    "网格间距", min_value=0.001, value=0.01, format="%.3f"
+                )
+            )
+            params["levels"] = int(
+                parameter_columns[2].number_input("网格层数", min_value=1, value=4)
+            )
+        else:
+            if template_name == "statistical_arbitrage":
+                same_interval = [
+                    symbol
+                    for symbol, interval in ready_scopes
+                    if interval == task2_interval and symbol != task2_symbol
+                ]
+                if same_interval:
+                    params["reference_symbol"] = st.selectbox("参照资产", same_interval)
+                params["hedge_window"] = int(
+                    parameter_columns[0].number_input("对冲窗口", min_value=5, value=168)
+                )
+                params["z_window"] = int(
+                    parameter_columns[1].number_input("价差窗口", min_value=5, value=72)
+                )
+            else:
+                params["window"] = int(
+                    parameter_columns[0].number_input("均值窗口", min_value=5, value=72)
+                )
+            params["entry_z"] = float(
+                parameter_columns[2].number_input(
+                    "信号阈值", min_value=0.1, value=1.5, format="%.2f"
+                )
+            )
+        execution_columns = st.columns(4)
+        task2_fee = float(
+            execution_columns[0].number_input(
+                "手续费", min_value=0.0, value=0.0004, format="%.5f"
+            )
+        )
+        task2_slippage = float(
+            execution_columns[1].number_input(
+                "滑点", min_value=0.0, value=0.0002, format="%.5f"
+            )
+        )
+        task2_leverage = float(
+            execution_columns[2].number_input("杠杆", min_value=1.0, value=1.0)
+        )
+        task2_risk = execution_columns[3].toggle("启用五类风控", value=True)
+        if template_name == "statistical_arbitrage" and not params.get("reference_symbol"):
+            st.warning("统计套利至少需要两个达到研究门槛的同频率资产。")
+        elif st.button("运行正式策略回测", type="primary", key="run_task2_template"):
+            try:
+                target_path = next(
+                    path
+                    for path in (PROJECT_ROOT / "data").glob("silver/**/klines.parquet")
+                    if task2_symbol in path.parts and task2_interval in path.parts
+                )
+                frame = silver_to_factor_input(pd.read_parquet(target_path))
+                strategy_params = dict(params)
+                reference_symbol = strategy_params.pop("reference_symbol", None)
+                if reference_symbol:
+                    reference_path = next(
+                        path
+                        for path in (PROJECT_ROOT / "data").glob(
+                            "silver/**/klines.parquet"
+                        )
+                        if reference_symbol in path.parts and task2_interval in path.parts
+                    )
+                    reference = silver_to_factor_input(pd.read_parquet(reference_path))
+                    frame["reference_close"] = reference["close"].reindex(frame.index)
+                    frame = frame.dropna(subset=["reference_close"])
+                strategy = create_strategy(template_name, **strategy_params)
+                target = strategy.generate_target(frame)
+                base_config = BacktestConfig(
+                    fee_rate=task2_fee,
+                    slippage_rate=task2_slippage,
+                    leverage=task2_leverage,
+                )
+                consistency = compare_backtest_engines(frame, target, base_config)
+                event_config = BacktestConfig(
+                    fee_rate=task2_fee,
+                    slippage_rate=task2_slippage,
+                    leverage=task2_leverage,
+                    risk_limits=(
+                        RiskLimits(max_leverage=max(1.0, task2_leverage))
+                        if task2_risk
+                        else None
+                    ),
+                )
+                st.session_state["task2_template_result"] = run_event_backtest(
+                    frame, target, event_config
+                )
+                st.session_state["task2_consistency"] = consistency
+            except (KeyError, OSError, StopIteration, ValueError) as exc:
+                st.error(str(exc))
+        task2_result = st.session_state.get("task2_template_result")
+        if task2_result:
+            consistency = st.session_state.get("task2_consistency", {})
+            if consistency.get("status") == "pass":
+                st.success(
+                    "回测一致性通过：最大逐期误差 "
+                    f"{float(consistency.get('max_abs_net_return_error', 0)):.2e}"
+                )
+            else:
+                st.warning("回测一致性尚未通过，请先检查执行口径。")
+            render_strategy_result(task2_result, key_prefix="task2_template")
+            risk_events = pd.DataFrame(task2_result.get("risk_events", []))
+            with st.expander("风控触发记录", expanded=not risk_events.empty):
+                if risk_events.empty:
+                    st.caption("所选样本没有触发风控；可调整区间或阈值进行压力测试。")
+                else:
+                    st.dataframe(risk_events, use_container_width=True, hide_index=True)
 
 elif page == "策略研究" and strategy_view == "单币种择时":
     st.subheader("单币种择时")

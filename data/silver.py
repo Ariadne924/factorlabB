@@ -19,6 +19,7 @@ import pandas as pd
 from config.settings import DEFAULT_DATA_DIR
 from data.paths import normalize_path_segment, safe_data_path
 from data.validator import DataValidator
+from utils.io_utils import write_parquet_safe
 
 
 def silver_klines_path(
@@ -61,8 +62,7 @@ def build_silver_from_bronze(bronze_path: Path, silver_path: Path) -> pd.DataFra
     DataValidator.validate_klines(silver_df)
 
     # 写入 Silver 层
-    silver_path.parent.mkdir(parents=True, exist_ok=True)
-    silver_df.to_parquet(silver_path, compression="zstd", index=False)
+    write_parquet_safe(silver_df, silver_path)
 
     return silver_df
 

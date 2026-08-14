@@ -14,6 +14,7 @@ import pandas as pd
 
 from config.settings import DEFAULT_DATA_DIR
 from data.paths import normalize_path_segment, safe_data_path
+from utils.io_utils import write_parquet_safe
 
 
 def gold_factor_path(
@@ -67,10 +68,8 @@ def write_gold_factor(
         interval=interval,
         factor_name=factor_name,
     )
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
     df = factor_series.to_frame(name=factor_name)
-    df.to_parquet(output_path, compression="zstd", index=True)
+    write_parquet_safe(df, output_path, index=True)
 
     return output_path
 

@@ -1,6 +1,6 @@
-# crypto-factor-lab：数字资产量化因子库
+# crypto-factor-lab：数字资产因子、策略与验证平台
 
-> 小组协作项目 · Task 1：量化因子库构建
+> 小组协作项目 · Task 1 已形成研究底座，正在推进 Task 2 策略库与 Task 3 Binance 测试网验证
 
 ## 项目简介
 
@@ -9,7 +9,9 @@
 - **数据层**：多交易所统一数据接口（Binance 优先），K 线 / 成交 / 资金费率标准化
 - **因子层**：413 个单资产正式候选因子与 53 个截面候选（25 个 Alpha101、28 个 CTREND 技术输入），覆盖动量、波动率、量价、数字资产特有、状态交互、Qlib 特征与公式因子；另含安全、无前视的表达式引擎
 - **评估层**：IC、分组、相关性、成本、前视检查，以及多窗口/多 horizon、区块 bootstrap 与 BH-FDR
-- **可视化层**：单因子报告、交互式仪表盘
+- **策略层**：趋势、网格、统计套利、均值回归模板，统一双引擎回测与可执行风控
+- **交易状态层**：SQLite 幂等账本、Binance 测试网安全客户端和单机服务健康监控
+- **可视化层**：单因子报告、策略模板、回测验证与实时行情仪表盘
 
 ## 环境要求
 
@@ -118,6 +120,15 @@ python scripts/run_live_market.py
 # 长期运行入口：同时维护实时采集与前端，子进程退出后自动退避重启
 python scripts/run_platform.py
 
+# Task 2：在现有 BTC/ETH 1h Silver 数据上运行四类策略、双引擎一致性和阈值研究
+python scripts/run_task2_acceptance.py
+
+# Task 3：默认只检查本地账本配置，不联网、不下单
+python scripts/check_binance_testnet.py
+# 可选：访问公开测试网时间；账户检查需要 .env 中的测试网密钥，仍不会下单
+python scripts/check_binance_testnet.py --connect
+python scripts/check_binance_testnet.py --account
+
 # 独立检查当前研究汇总引用的报告是否完整
 python scripts/check_reports.py
 
@@ -141,7 +152,7 @@ python scripts/incremental_update.py --dry-run
 
 # CI 使用的质量检查
 ruff check .
-mypy config data factors evaluation utils scripts visualization
+mypy config data factors evaluation operations strategies trading utils scripts visualization
 ```
 
 ## 项目结构
@@ -152,6 +163,9 @@ crypto-factor-lab/
 ├── data/                # 数据层：Schema、交易所接口、下载器、校验器
 ├── factors/             # 因子层：基类、registry、原有因子与 Qlib-style 因子
 ├── evaluation/          # 评估层：IC、分组、稳健性、FDR、相关性、成本、前视检查
+├── strategies/          # Task 2：四类策略、统一目标敞口、双回测引擎
+├── trading/             # Task 2/3：风险、SQLite 账本、Binance 测试网
+├── operations/          # 长期运行：心跳、崩溃熔断与状态文件
 ├── visualization/       # 可视化层：报告、仪表盘、绘图工具
 ├── utils/               # 工具层：时间转换、日志、IO
 ├── scripts/             # 运行脚本：全流程、增量更新
@@ -194,7 +208,7 @@ crypto-factor-lab/
 - 独立 panel registry 已接入 25 个 Alpha101 公式与 CTREND 论文描述的 28 个技术输入；保留来源、依赖、哈希和适配说明，它们是待检验候选，不是已验证 alpha。
 - `reports/data_catalog.json` 记录 Silver 覆盖与内部缺口；下载脚本只规划缺失范围，完整覆盖时返回 `up_to_date`。
 - 截面研究输出同一时点 IC/RankIC、滚动 IC、IC decay、分组收益、换手率、成本敏感性、FDR 和前视检查；少于 3 个币种时明确返回 `insufficient_data`。
-- Streamlit 左侧使用 6 个任务入口；新增“实时行情”，并由独立进程更新逐笔成交、盘口、当前 K 线、Funding 与 Basis 秒级快照。“策略研究”统一承载单币种择时、多币种选币和结果比较。两类策略均支持币种/频率/区间、多个因子、权重与方向、调仓和成本；ML 训练折推荐可以一键生成单币种策略候选预设。
+- Streamlit 左侧使用 6 个任务入口；“实时行情”由独立进程更新逐笔成交、盘口、当前 K 线、Funding 与 Basis 秒级快照。“策略研究”统一承载四类策略模板、单币种择时、多币种选币和结果比较。策略支持币种/频率/区间、多个因子、权重与方向、调仓和成本；ML 训练折推荐可以一键生成单币种策略候选预设。
 - 首页使用数据、策略和验证产物动态生成流程完成度与下一步建议；“因子检验”统一展示单资产、截面和跨口径结果，并可后置，不再阻塞用户直接使用正式 registry 构建策略。数据中心将缺频率、K 线缺口、行情陈旧和衍生品缺失整理为 P0/P1 任务队列，具体交互口径见 `docs/FRONTEND_WORKFLOW.md`。
 - 单币种择时包含成本重定价、分月/滚动表现、Buy & Hold、参数邻域检查、因果市场状态归因，以及训练期选参后冻结参数的策略 Walk-Forward；还支持显式保存和横向比较策略快照，保存结果默认留在本地报告目录。
 - Data Center 每 30 秒读取本地覆盖目录，并提供用户主动触发的短窗口 REST 刷新；重复数据按时间键合并。该功能是近实时 K 线刷新，不冒充逐笔流式存储。
@@ -205,7 +219,9 @@ crypto-factor-lab/
 - OKX 最小公共 REST 客户端：统一接入现货 K 线、成交、盘口与永续资金费率；不冒充完整生产级连接器。
 - Binance WebSocket：公共 USD-M combined stream、独立采集进程、原子前端快照、已收盘 K 线幂等落盘、自动重连和指数退避；不提供 exactly-once、持久化队列或自动下单。详见 `docs/REALTIME_MARKET.md`。
 - 实时页面包含分钟涨跌、点差、资金费率和数据陈旧四类市场异动提醒；提醒只用于研究观察，不触发下单。
-- `scripts/run_platform.py` 可同时守护采集器和 Streamlit，记录 PID、重启次数与更新时间到 `reports/service_status.json`。它是单机研究环境守护器，不替代 Docker/systemd/Kubernetes。
+- `scripts/run_platform.py` 可同时守护采集器和 Streamlit，包含心跳卡死检测、连续崩溃熔断、日志轮转和优雅关闭，并记录 PID、重启次数与更新时间到 `reports/service_status.json`。它是单机研究环境守护器，不替代 Docker/systemd/Kubernetes。
+- Task 2 已建立统一四类策略接口、向量化/逐事件一致性门禁、手续费/滑点/Funding/杠杆模型、五类可执行风控和阈值稳定平台研究；详见 `docs/TASK2_STRATEGY_LIBRARY.md`。这些是策略研究能力，不代表策略已经盈利。
+- Task 3 已建立只指向 Binance 现货/USD-M 测试网的签名客户端、确定性订单 ID 和 SQLite WAL 账本；默认 dry-run，尚未使用真实测试网密钥完成前向成绩单，详见 `docs/TASK3_TESTNET.md`。
 - 研究入口会生成 `reports/report_health.json` 检查当前汇总引用是否完整；旧报告保留但不混入当前研究汇总。完整研究周期还会写入 `reports/training_status.json`，展示数据检查、因子研究、ML 和完成状态。
 - 全量因子研究默认启用两级缓存：先复用未变化的资产×频率报告，选择范围、数据、参数和研究源码全部一致时直接复用最终汇总快照；任何相关条件变化都会自动降级为对应口径重算。进度写入 `reports/research_status.json`，并在数据中心显示完成比例、当前因子与缓存命中数。使用 `--no-cache` 可强制重算。
 - 数据异常报告：极端价格跳变、stale/flat、零成交量、交易所时间缺口。

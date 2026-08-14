@@ -17,6 +17,7 @@ from config.constants import KlineInterval
 from config.settings import DEFAULT_DATA_DIR
 from data.paths import normalize_path_segment, safe_data_path
 from data.schema import KlineRaw, bronze_to_silver, raw_to_dataframe
+from utils.io_utils import merge_parquet_safe
 
 
 def _task_int(task: dict[str, object], field: str) -> int:
@@ -225,13 +226,12 @@ class BinanceArchiveDownloader:
             normalize_path_segment(interval, field_name="interval", case="lower"),
             "klines.parquet",
         )
-        combined = pd.concat(list(frames), ignore_index=True)
-        if path.exists():
-            combined = pd.concat([pd.read_parquet(path), combined], ignore_index=True)
-        combined = combined.drop_duplicates("open_time", keep="last").sort_values("open_time")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        combined.to_parquet(path, compression="zstd", index=False)
-        silver = bronze_to_silver(combined.reset_index(drop=True))
+        combined = merge_parquet_safe(
+            path,
+            pd.concat(list(frames), ignore_index=True),
+            key="open_time",
+        )
+        silver = bronze_to_silver(combined)
         silver_path = safe_data_path(
             self.data_dir,
             "silver",
@@ -241,8 +241,7 @@ class BinanceArchiveDownloader:
             normalize_path_segment(interval, field_name="interval", case="lower"),
             "klines.parquet",
         )
-        silver_path.parent.mkdir(parents=True, exist_ok=True)
-        silver.to_parquet(silver_path, compression="zstd", index=False)
+        merge_parquet_safe(silver_path, silver, key="open_time_utc")
         return path, silver_path
 
     @staticmethod

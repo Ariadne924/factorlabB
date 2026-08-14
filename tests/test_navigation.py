@@ -46,6 +46,7 @@ def test_strategy_research_has_one_primary_entry() -> None:
     assert "多因子回测" not in PRIMARY_PAGES
     assert "策略比较" not in PRIMARY_PAGES
     assert STRATEGY_RESEARCH_VIEWS == (
+        "策略模板",
         "单币种择时",
         "多币种选币",
         "结果比较",
@@ -87,6 +88,7 @@ def test_app_exposes_one_strategy_entry_with_three_views() -> None:
     assert tuple(strategy_control.options) == STRATEGY_RESEARCH_VIEWS
 
     expected_subheaders = {
+        "策略模板": "Task 2 四类策略模板",
         "单币种择时": "单币种择时",
         "多币种选币": "多币种选币",
         "结果比较": "结果比较",

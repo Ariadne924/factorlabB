@@ -8,7 +8,7 @@
 python scripts/run_platform.py
 ```
 
-该入口同时维护实时采集器和 Streamlit。任一子进程异常退出后会按 1、2、4 秒逐步退避重启，最长等待 30 秒；运行状态写入 `reports/service_status.json`。按 `Ctrl+C` 会依次关闭两个子进程。
+该入口同时维护实时采集器和 Streamlit。任一子进程异常退出后会按 1、2、4 秒逐步退避重启，最长等待 30 秒；60 秒内连续崩溃 5 次将打开熔断器并以失败状态退出，避免无限重启。实时快照超过 45 秒未更新时会重启采集器。运行状态写入 `reports/service_status.json`，子进程输出写入 `logs/live_market.log` 和 `logs/frontend.log`，超过约 5 MB 会在下一次启动前轮转。按 `Ctrl+C` 或收到终止信号会依次关闭两个子进程。
 
 如果前端由其他方式托管，可以只维护采集器：
 

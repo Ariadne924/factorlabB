@@ -21,6 +21,7 @@ PRIMARY_PAGES = (
 )
 
 STRATEGY_RESEARCH_VIEWS = (
+    "策略模板",
     "单币种择时",
     "多币种选币",
     "结果比较",

@@ -65,6 +65,13 @@ reports/training_readiness.json
 reports/single_factor/[A-Z]*_*.json
 reports/ml_factor/[A-Z]*_*.json
 reports/strategy_snapshots/
+reports/task2/
+
+# ---- 本地交易状态 ----
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+*.lock
 
 # ---- 分发/打包 ----
 dist/

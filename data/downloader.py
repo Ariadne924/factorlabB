@@ -16,6 +16,7 @@ from data.binance_client import BinanceClient
 from data.paths import normalize_path_segment, safe_data_path
 from data.schema import bronze_to_silver
 from data.silver import merge_point_in_time_features, silver_to_factor_input
+from utils.io_utils import merge_parquet_safe
 
 ClientFactory = Callable[[str], BinanceClient]
 
@@ -76,14 +77,7 @@ class DataDownloader:
         *,
         key: str,
     ) -> pd.DataFrame:
-        combined = frame.copy()
-        if path.exists():
-            combined = pd.concat([pd.read_parquet(path), combined], ignore_index=True)
-        if not combined.empty:
-            combined = combined.drop_duplicates(subset=[key], keep="last").sort_values(key)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        combined.to_parquet(path, compression="zstd", index=False)
-        return combined.reset_index(drop=True)
+        return merge_parquet_safe(path, frame, key=key)
 
     @staticmethod
     def _paginate_datetime(
@@ -347,9 +341,10 @@ class DataDownloader:
             interval=interval,
             filename="klines.parquet",
         )
-        silver_path.parent.mkdir(parents=True, exist_ok=True)
-        enriched.reset_index().to_parquet(
-            silver_path, compression="zstd", index=False
+        merge_parquet_safe(
+            silver_path,
+            enriched.reset_index(),
+            key="open_time_utc",
         )
         return {
             "status": "downloaded",

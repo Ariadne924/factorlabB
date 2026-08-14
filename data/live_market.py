@@ -19,6 +19,7 @@ from data.binance_websocket import BinanceWebSocketStream
 from data.market_alerts import evaluate_market_alerts
 from data.schema import KlineRaw, bronze_to_silver, raw_to_dataframe
 from data.silver import silver_klines_path
+from utils.io_utils import merge_parquet_safe
 
 LIVE_SNAPSHOT_VERSION = "1.0"
 DEFAULT_LIVE_SYMBOLS = (
@@ -361,21 +362,7 @@ class FinalizedKlineStore:
             symbol=str(record["symbol"]),
             interval=str(record["interval"]),
         )
-        if path.exists():
-            existing = pd.read_parquet(path)
-            combined = pd.concat([existing, new_frame], ignore_index=True)
-        else:
-            combined = new_frame
-        combined["open_time_utc"] = pd.to_datetime(combined["open_time_utc"], utc=True)
-        combined = (
-            combined.sort_values("open_time_utc")
-            .drop_duplicates("open_time_utc", keep="last")
-            .reset_index(drop=True)
-        )
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_name("klines.live.tmp.parquet")
-        combined.to_parquet(temporary, compression="zstd", index=False)
-        temporary.replace(path)
+        merge_parquet_safe(path, new_frame, key="open_time_utc")
         return path
 
 
