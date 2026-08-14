@@ -17,8 +17,8 @@ from typing import Final
 class Exchange(StrEnum):
     """支持的交易所列表"""
     BINANCE = "binance"
+    OKX = "okx"
     # 预留扩展：
-    # OKX = "okx"
     # BYBIT = "bybit"
 
 

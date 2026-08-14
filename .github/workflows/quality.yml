@@ -18,6 +18,6 @@ jobs:
       - name: Lint
         run: ruff check .
       - name: Type check
-        run: mypy config data factors utils scripts
+        run: mypy config data factors evaluation operations strategies trading utils scripts visualization
       - name: Test
         run: pytest

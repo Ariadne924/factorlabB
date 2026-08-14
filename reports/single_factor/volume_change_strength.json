@@ -1,0 +1,55 @@
+{
+  "factor_name": "volume_change_strength",
+  "status": "insufficient_data",
+  "reason": "未找到 Silver K 线数据",
+  "sample": {
+    "start": null,
+    "end": null,
+    "frequency": null,
+    "n_obs": 0
+  },
+  "metrics": {
+    "ic": null,
+    "rank_ic": null,
+    "icir": null,
+    "turnover": null
+  },
+  "provenance": {
+    "category": "量价",
+    "description": "Signed rolling volume-change balance divided by absolute volume change",
+    "source": "Microsoft Qlib Alpha158",
+    "source_url": "https://github.com/microsoft/qlib/blob/main/qlib/contrib/data/loader.py",
+    "scope": "time_series",
+    "data_dependencies": [
+      "open",
+      "high",
+      "low",
+      "close",
+      "volume"
+    ],
+    "default_params": {
+      "window": 24
+    }
+  },
+  "robustness": {
+    "window_horizon": [],
+    "bootstrap_rank_ic": {},
+    "sign_consistency": null,
+    "group_monotonicity": null,
+    "multiple_testing": {
+      "p_value": null,
+      "q_value": null,
+      "reject_fdr_5pct": null
+    }
+  },
+  "ic_decay": [],
+  "group_returns": [],
+  "rolling_ic": [],
+  "lookahead_status": "not_run",
+  "cost_assumptions": {
+    "fee_rate": 0.001,
+    "slippage": 0.0005,
+    "units": "one-way"
+  },
+  "research_note": "无足够真实样本；不得据此宣称已验证 alpha 或完成 6 个月 OOS。"
+}

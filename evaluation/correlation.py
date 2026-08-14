@@ -18,8 +18,7 @@ def correlation_matrix(factor_values: pd.DataFrame) -> pd.DataFrame:
     Returns:
         相关系数矩阵
     """
-    # TODO: 实现相关性矩阵计算
-    raise NotImplementedError
+    return factor_values.rank().corr(method="pearson")
 
 
 def find_redundant_factors(
@@ -35,5 +34,14 @@ def find_redundant_factors(
     Returns:
         [(因子A, 因子B, 相关系数), ...] 列表
     """
-    # TODO: 实现冗余因子检测
-    raise NotImplementedError
+    if not 0 <= threshold <= 1:
+        raise ValueError("threshold 必须在 0..1")
+    matrix = correlation_matrix(factor_values)
+    names = list(matrix.columns)
+    pairs: list[tuple[str, str, float]] = []
+    for i, left in enumerate(names):
+        for right in names[i + 1 :]:
+            value = matrix.loc[left, right]
+            if pd.notna(value) and abs(value) >= threshold:
+                pairs.append((str(left), str(right), float(value)))
+    return pairs

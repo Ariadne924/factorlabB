@@ -14,6 +14,7 @@ import pandas as pd
 
 from config.settings import DEFAULT_DATA_DIR
 from data.paths import normalize_path_segment, safe_data_path
+from utils.io_utils import write_parquet_safe
 
 
 def bronze_klines_path(
@@ -69,8 +70,7 @@ def write_bronze_klines(df: pd.DataFrame, path: Path) -> None:
         df: 原始 K 线 DataFrame（来自 KlineRaw 转换）
         path: 输出文件路径
     """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(path, compression="zstd", index=False)
+    write_parquet_safe(df, path)
 
 
 def read_bronze_klines(path: Path) -> pd.DataFrame:

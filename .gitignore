@@ -45,6 +45,33 @@ data/cache/
 reports/*.html
 reports/*.png
 reports/*.pdf
+reports/data_quality_*.json
+reports/data_download_manifest.json
+reports/real_data_collection_manifest.json
+reports/data_catalog.json
+reports/data_health.json
+reports/live_market.json
+reports/service_status.json
+reports/research_cache.json
+reports/research_status.json
+reports/factor_correlation_*.json
+reports/factor_grades/
+reports/frontend_payload.json
+reports/lookahead_report.json
+reports/ml_factor_summary.json
+reports/panel_research_summary.json
+reports/report_health.json
+reports/training_readiness.json
+reports/single_factor/[A-Z]*_*.json
+reports/ml_factor/[A-Z]*_*.json
+reports/strategy_snapshots/
+reports/task2/
+
+# ---- 本地交易状态 ----
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+*.lock
 
 # ---- 分发/打包 ----
 dist/
@@ -54,6 +81,9 @@ build/
 
 # ---- 测试 ----
 .pytest_cache/
+.test-tmp/
+.tmp_pytest/
+.tmp_pytest_*/
 .coverage
 htmlcov/
 .tox/

@@ -67,6 +67,92 @@ class DataValidator:
         return (values - values.mean()).abs() > n_std * std
 
     @staticmethod
+    def check_extreme_price_spike(
+        df: pd.DataFrame,
+        *,
+        threshold: float = 0.20,
+    ) -> pd.Series:
+        """标记相邻收盘价绝对收益超过阈值的行。"""
+        if threshold <= 0:
+            raise ValueError("threshold 必须大于 0")
+        if "close" not in df.columns:
+            raise ValueError("缺少 close 列")
+        return df["close"].pct_change(fill_method=None).abs().gt(threshold).fillna(False)
+
+    @staticmethod
+    def check_stale_data(df: pd.DataFrame, *, window: int = 3) -> pd.Series:
+        """标记连续 window 根 K 线收盘价完全不变的末端行。"""
+        if window < 2:
+            raise ValueError("window 必须至少为 2")
+        if "close" not in df.columns:
+            raise ValueError("缺少 close 列")
+        rolling_max = df["close"].rolling(window, min_periods=window).max()
+        rolling_min = df["close"].rolling(window, min_periods=window).min()
+        return rolling_max.eq(rolling_min).fillna(False)
+
+    @staticmethod
+    def check_zero_volume(df: pd.DataFrame) -> pd.Series:
+        """标记零成交量 K 线；负数仍由严格 Schema 校验拒绝。"""
+        if "volume" not in df.columns:
+            raise ValueError("缺少 volume 列")
+        return df["volume"].eq(0).fillna(False)
+
+    @staticmethod
+    def check_exchange_gap(df: pd.DataFrame, expected_interval: str) -> pd.Series:
+        """标记距离上一根 K 线超过预期周期的第一行。"""
+        if "open_time_utc" not in df.columns:
+            raise ValueError("缺少 open_time_utc 列")
+        interval = pd.Timedelta(milliseconds=get_interval_ms(expected_interval))
+        timestamps = pd.to_datetime(df["open_time_utc"], utc=True)
+        return timestamps.diff().gt(interval).fillna(False)
+
+    @staticmethod
+    def build_quality_flags(
+        df: pd.DataFrame,
+        *,
+        expected_interval: str,
+        spike_threshold: float = 0.20,
+        stale_window: int = 3,
+    ) -> pd.DataFrame:
+        """生成不改变原数据的基础异常 flag 表。"""
+        DataValidator.validate_klines(df)
+        return pd.DataFrame(
+            {
+                "open_time_utc": df["open_time_utc"],
+                "extreme_price_spike": DataValidator.check_extreme_price_spike(
+                    df, threshold=spike_threshold
+                ),
+                "stale_flat_data": DataValidator.check_stale_data(df, window=stale_window),
+                "zero_volume": DataValidator.check_zero_volume(df),
+                "exchange_gap": DataValidator.check_exchange_gap(df, expected_interval),
+            },
+            index=df.index,
+        )
+
+    @staticmethod
+    def summarize_quality_flags(flags: pd.DataFrame) -> dict[str, object]:
+        """将逐行 flag 汇总为可序列化报告。"""
+        flag_columns = [column for column in flags.columns if column != "open_time_utc"]
+        total = len(flags)
+        counts = {
+            column: int(flags[column].fillna(False).astype(bool).sum()) for column in flag_columns
+        }
+        ratios = {column: (count / total if total else 0.0) for column, count in counts.items()}
+        events: dict[str, list[str]] = {}
+        for column in flag_columns:
+            mask = flags[column].fillna(False).astype(bool)
+            events[column] = [
+                pd.Timestamp(value).isoformat()
+                for value in flags.loc[mask, "open_time_utc"].tolist()
+            ]
+        return {
+            "rows": total,
+            "flag_counts": counts,
+            "flag_ratios": ratios,
+            "flagged_timestamps_utc": events,
+        }
+
+    @staticmethod
     def validate_schema(df: pd.DataFrame, required_columns: list[str]) -> bool:
         """检查 DataFrame 是否包含所有必需列"""
         return all(col in df.columns for col in required_columns)
@@ -109,9 +195,7 @@ class DataValidator:
             "num_trades",
         ]
         non_numeric = [
-            column
-            for column in numeric_columns
-            if not pd.api.types.is_numeric_dtype(df[column])
+            column for column in numeric_columns if not pd.api.types.is_numeric_dtype(df[column])
         ]
         if non_numeric:
             raise ValueError(f"Silver K 线数值列类型不合法: {non_numeric}")
@@ -139,7 +223,5 @@ class DataValidator:
         if (df[nonnegative_columns] < 0).any().any():
             raise ValueError("成交量、成交额和成交笔数不能为负数")
         for column in ("symbol", "interval"):
-            if not df[column].map(
-                lambda value: isinstance(value, str) and bool(value)
-            ).all():
+            if not df[column].map(lambda value: isinstance(value, str) and bool(value)).all():
                 raise ValueError(f"{column} 必须是非空字符串")

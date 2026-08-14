@@ -83,6 +83,10 @@ def register_factor(
     category: str = "未分类",
     description: str = "",
     default_params: dict[str, Any] | None = None,
+    source: str = "project",
+    source_url: str = "",
+    scope: str = "time_series",
+    data_dependencies: tuple[str, ...] = ("open", "high", "low", "close", "volume"),
 ) -> Callable[[FactorFactory], FactorFactory]:
     """因子注册装饰器（v2 — 注册工厂函数）
 
@@ -113,6 +117,10 @@ def register_factor(
             "category": category,
             "description": description or (factory.__doc__ or "").strip(),
             "default_params": deepcopy(default_params) if default_params is not None else {},
+            "source": source,
+            "source_url": source_url,
+            "scope": scope,
+            "data_dependencies": list(data_dependencies),
         }
 
         return factory

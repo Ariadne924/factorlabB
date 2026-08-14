@@ -19,6 +19,7 @@ import pandas as pd
 from config.settings import DEFAULT_DATA_DIR
 from data.paths import normalize_path_segment, safe_data_path
 from data.validator import DataValidator
+from utils.io_utils import write_parquet_safe
 
 
 def silver_klines_path(
@@ -61,8 +62,7 @@ def build_silver_from_bronze(bronze_path: Path, silver_path: Path) -> pd.DataFra
     DataValidator.validate_klines(silver_df)
 
     # 写入 Silver 层
-    silver_path.parent.mkdir(parents=True, exist_ok=True)
-    silver_df.to_parquet(silver_path, compression="zstd", index=False)
+    write_parquet_safe(silver_df, silver_path)
 
     return silver_df
 
@@ -93,3 +93,49 @@ def silver_to_factor_input(silver_df: pd.DataFrame) -> pd.DataFrame:
     df = df.set_index("open_time_utc")
     df = df.sort_index()
     return df
+
+
+def merge_point_in_time_features(
+    klines: pd.DataFrame,
+    features: pd.DataFrame,
+    *,
+    feature_columns: list[str],
+    feature_time_column: str = "timestamp",
+    tolerance: pd.Timedelta | None = None,
+) -> pd.DataFrame:
+    """向后合并扩展数据，确保时间 t 不会读到 t 之后发布的值。"""
+    if not isinstance(klines.index, pd.DatetimeIndex) or klines.index.tz is None:
+        raise ValueError("klines 必须使用带时区 DatetimeIndex")
+    required = [feature_time_column, *feature_columns]
+    missing = [column for column in required if column not in features.columns]
+    if missing:
+        raise ValueError(f"扩展数据缺少列: {missing}")
+    original_index = klines.index
+    normalized_index = pd.DatetimeIndex(
+        pd.to_datetime(original_index, utc=True)
+    ).astype("datetime64[ns, UTC]")
+    right = features[required].copy()
+    right[feature_time_column] = pd.to_datetime(
+        right[feature_time_column], utc=True
+    ).astype("datetime64[ns, UTC]")
+    right = right.sort_values(feature_time_column)
+    left_name = klines.index.name or "open_time_utc"
+    normalized_klines = klines.copy()
+    normalized_klines.index = normalized_index
+    left = normalized_klines.reset_index(names=left_name)
+    left[left_name] = pd.to_datetime(left[left_name], utc=True).astype(
+        "datetime64[ns, UTC]"
+    )
+    left = left.sort_values(left_name)
+    merged = pd.merge_asof(
+        left,
+        right,
+        left_on=left_name,
+        right_on=feature_time_column,
+        direction="backward",
+        tolerance=tolerance,
+        allow_exact_matches=True,
+    ).drop(columns=[feature_time_column])
+    result = merged.set_index(left_name).reindex(normalized_index)
+    result.index = original_index
+    return result

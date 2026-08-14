@@ -9,6 +9,20 @@ from __future__ import annotations
 import pandas as pd
 
 
+def _aligned(a: pd.Series, b: pd.Series) -> pd.DataFrame:
+    return pd.concat([a.rename("factor"), b.rename("forward_return")], axis=1).dropna()
+
+
+def compute_ic(factor_values: pd.Series, forward_returns: pd.Series) -> float:
+    """计算 Pearson IC；有效样本少于 2 时返回 NaN。"""
+    data = _aligned(factor_values, forward_returns)
+    return (
+        float(data["factor"].corr(data["forward_return"], method="pearson"))
+        if len(data) >= 2
+        else float("nan")
+    )
+
+
 def compute_rank_ic(factor_values: pd.Series, forward_returns: pd.Series) -> float:
     """计算 Rank IC（Spearman 秩相关系数）
 
@@ -19,8 +33,12 @@ def compute_rank_ic(factor_values: pd.Series, forward_returns: pd.Series) -> flo
     Returns:
         Rank IC 值
     """
-    # TODO: 实现 Rank IC 计算逻辑
-    raise NotImplementedError
+    data = _aligned(factor_values, forward_returns)
+    return (
+        float(data["factor"].rank().corr(data["forward_return"].rank()))
+        if len(data) >= 2
+        else float("nan")
+    )
 
 
 def compute_ic_summary(factor_values: pd.DataFrame, forward_returns: pd.Series) -> pd.DataFrame:
@@ -33,5 +51,47 @@ def compute_ic_summary(factor_values: pd.DataFrame, forward_returns: pd.Series) 
     Returns:
         IC 统计摘要表
     """
-    # TODO: 实现 IC 摘要统计
-    raise NotImplementedError
+    records: list[dict[str, float | int | str]] = []
+    for name in factor_values.columns:
+        data = _aligned(factor_values[name], forward_returns)
+        rank_ic = compute_rank_ic(data["factor"], data["forward_return"])
+        pearson_ic = compute_ic(data["factor"], data["forward_return"])
+        window = min(20, len(data))
+        rolling = (
+            data["factor"]
+            .rolling(window, min_periods=max(3, window // 2))
+            .corr(data["forward_return"])
+        )
+        ic_std = rolling.std(ddof=1)
+        icir = rolling.mean() / ic_std if pd.notna(ic_std) and ic_std > 0 else float("nan")
+        records.append(
+            {
+                "factor": str(name),
+                "n_obs": int(len(data)),
+                "ic": pearson_ic,
+                "rank_ic": rank_ic,
+                "icir": float(icir),
+            }
+        )
+    return pd.DataFrame.from_records(records).set_index("factor")
+
+
+def rolling_ic(
+    factor_values: pd.Series,
+    forward_returns: pd.Series,
+    *,
+    window: int = 20,
+    method: str = "spearman",
+) -> pd.Series:
+    """时间序列滚动相关；用于短样本诊断，不等同于跨资产截面 IC。"""
+    if window < 3:
+        raise ValueError("window 必须至少为 3")
+    data = _aligned(factor_values, forward_returns)
+    if method == "spearman":
+        left = data["factor"].rank()
+        right = data["forward_return"].rank()
+    elif method == "pearson":
+        left, right = data["factor"], data["forward_return"]
+    else:
+        raise ValueError("method 仅支持 pearson/spearman")
+    return left.rolling(window, min_periods=window).corr(right).rename("rolling_ic")

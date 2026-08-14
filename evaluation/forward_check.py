@@ -11,6 +11,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
+import numpy as np
 import pandas as pd
 
 
@@ -36,8 +39,14 @@ class ForwardCheck:
         Returns:
             True 表示通过检查（无前视偏差）
         """
-        # TODO: 实现前视偏差检查
-        raise NotImplementedError
+        if not isinstance(factor_values.index, pd.DatetimeIndex):
+            return False
+        if factor_values.index.tz is None or data_timestamps.tz is None:
+            return False
+        return (
+            factor_values.index.equals(data_timestamps)
+            and factor_values.index.is_monotonic_increasing
+        )
 
     @staticmethod
     def check_forward_return_alignment(
@@ -55,5 +64,35 @@ class ForwardCheck:
         Returns:
             True 表示对齐正确
         """
-        # TODO: 实现收益对齐检查
-        raise NotImplementedError
+        if not factor_values.index.equals(forward_returns.index):
+            return False
+        return (
+            isinstance(factor_values.index, pd.DatetimeIndex)
+            and factor_values.index.is_monotonic_increasing
+        )
+
+    @staticmethod
+    def check_truncation_invariance(
+        factor: Callable[[pd.DataFrame], pd.Series],
+        data: pd.DataFrame,
+        *,
+        sample_positions: list[int] | None = None,
+        rtol: float = 1e-10,
+        atol: float = 1e-12,
+    ) -> bool:
+        """截断未来数据后重算，验证历史末值完全不变。"""
+        if data.empty:
+            raise ValueError("data 不能为空")
+        full = factor(data)
+        positions = sample_positions or sorted({len(data) // 3, 2 * len(data) // 3, len(data) - 1})
+        for position in positions:
+            if position < 0 or position >= len(data):
+                raise ValueError("sample_positions 越界")
+            truncated = factor(data.iloc[: position + 1])
+            expected = full.iloc[position]
+            actual = truncated.iloc[-1]
+            if pd.isna(expected) and pd.isna(actual):
+                continue
+            if not np.isclose(actual, expected, rtol=rtol, atol=atol, equal_nan=True):
+                return False
+        return True
